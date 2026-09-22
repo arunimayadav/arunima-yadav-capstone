@@ -22,7 +22,7 @@ struct SettingsView: View {
                         }
                     }
                     Text("Local Ollama is always the fallback if a cloud provider isn't configured or a call fails.")
-                        .font(.caption)
+                        .font(ArchivistType.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -41,7 +41,7 @@ struct SettingsView: View {
                         }
                     }
                     Link("Get a Groq key", destination: URL(string: "https://console.groq.com/keys")!)
-                        .font(.caption)
+                        .font(ArchivistType.caption)
                 }
 
                 Section("Watching") {
@@ -59,11 +59,15 @@ struct SettingsView: View {
                     Text("Used for files classified as your own work — " +
                          "\(settings.personName.isEmpty ? "Person" : settings.personName)_Title_YYYY-MM-DD.ext. " +
                          "Required by skills/filename-nomenclature.md, which explicitly never infers this from the file.")
-                        .font(.caption)
+                        .font(ArchivistType.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             .padding()
+            // Forms/Lists paint their own opaque grouped background by default,
+            // which would clash with the popover's translucent material — hiding
+            // it lets Settings match the glass look the other tabs use.
+            .scrollContentBackground(.hidden)
         }
     }
 }

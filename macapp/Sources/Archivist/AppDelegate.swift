@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusBarItem.button {
-            button.image = NSImage(systemSymbolName: "archivebox", accessibilityDescription: "Archivist")
+            button.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "Archivist")
             button.action = #selector(togglePopover)
             button.target = self
             print("[Archivist][AppDelegate] menu bar status item created")
