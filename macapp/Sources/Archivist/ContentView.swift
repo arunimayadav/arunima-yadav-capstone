@@ -4,7 +4,6 @@ enum ArchivistTab: String, CaseIterable, Identifiable {
     case search = "Search"
     case command = "Organize"
     case review = "Review"
-    case settings = "Settings"
     var id: String { rawValue }
 }
 
@@ -24,18 +23,38 @@ enum ArchivistTab: String, CaseIterable, Identifiable {
 /// typical document window.
 struct ContentView: View {
     @ObservedObject var environment: AppEnvironment
-    @State private var tab: ArchivistTab = .search
+    @State private var showSettings = false
 
     static let size = NSSize(width: 380, height: 460)
     private static let cornerRadius: CGFloat = 16
+    private static let settingsSize = NSSize(width: 320, height: 380)
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                ForEach(ArchivistTab.allCases) { Text($0.rawValue).tag($0) }
+            HStack(spacing: 10) {
+                Picker("", selection: $environment.selectedTab) {
+                    ForEach(ArchivistTab.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+
+                // Settings lives behind a gear rather than as a fourth tab, so the
+                // segmented control stays focused on the three things you actually
+                // switch between day-to-day.
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showSettings) {
+                    SettingsView(settings: environment.settings)
+                        .frame(width: Self.settingsSize.width, height: Self.settingsSize.height)
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 8)
@@ -43,15 +62,13 @@ struct ContentView: View {
             Divider().opacity(0.5)
 
             Group {
-                switch tab {
+                switch environment.selectedTab {
                 case .search:
                     SearchView(store: environment.store)
                 case .command:
                     CommandView(interpreter: environment.commandInterpreter)
                 case .review:
                     ReviewView(store: environment.store, settings: environment.settings)
-                case .settings:
-                    SettingsView(settings: environment.settings)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

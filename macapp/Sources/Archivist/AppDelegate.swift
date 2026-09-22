@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 /// Menu bar shell: NSStatusItem in the top toolbar, no Dock icon (.accessory),
 /// clicking opens a popover hosting ContentView — plan.md section 2/6.
@@ -7,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private let environment = AppEnvironment()
+    private var reviewCountCancellable: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[Archivist][AppDelegate] applicationDidFinishLaunching")
@@ -14,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusBarItem.button {
-            button.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "Archivist")
+            button.image = Self.icon(withBadge: false)
             button.action = #selector(togglePopover)
             button.target = self
             print("[Archivist][AppDelegate] menu bar status item created")
@@ -22,6 +24,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             print("[Archivist][AppDelegate] WARNING: statusBarItem.button was nil — no menu bar icon will show")
         }
         self.statusItem = statusBarItem
+
+        // Same idea as an app icon's unread-count badge: a small red dot appears
+        // on the menu bar icon whenever a file is waiting in Review, and clears
+        // itself the moment the count drops back to zero.
+        reviewCountCancellable = environment.$pendingReviewCount
+            .map { $0 > 0 }
+            .removeDuplicates()
+            .sink { [weak self] hasBadge in
+                self?.statusItem?.button?.image = Self.icon(withBadge: hasBadge)
+            }
 
         let contentView = ContentView(environment: environment)
         let hostingController = NSHostingController(rootView: contentView)
@@ -48,7 +60,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            // Clicking with a badge showing jumps straight to Review — that's the
+            // whole point of the badge, the same way clicking a Mail unread count
+            // takes you to the inbox rather than wherever you last were.
+            environment.refreshReviewCount()
+            environment.selectedTab = environment.pendingReviewCount > 0 ? .review : .search
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
+    }
+
+    /// Composites a small red dot onto the folder glyph's top-right corner. The
+    /// base glyph is drawn tinted with `labelColor` (a dynamic system color) rather
+    /// than left as a template image, because a template image would have its red
+    /// dot flattened to the same monochrome tint as everything else — compositing
+    /// forces us to handle light/dark adaptation ourselves instead of getting it
+    /// for free from `NSStatusBarButton`'s automatic template rendering.
+    private static func icon(withBadge: Bool) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        guard let symbol = NSImage(systemSymbolName: "folder", accessibilityDescription: "Archivist") else {
+            return NSImage(size: size)
+        }
+
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.labelColor.set()
+        symbol.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1)
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+
+        if withBadge {
+            let diameter: CGFloat = 6.5
+            let dotRect = NSRect(x: size.width - diameter, y: size.height - diameter,
+                                  width: diameter, height: diameter)
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+        }
+        image.unlockFocus()
+        return image
     }
 }

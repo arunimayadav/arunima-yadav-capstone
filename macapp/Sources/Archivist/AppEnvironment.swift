@@ -11,6 +11,19 @@ final class AppEnvironment: ObservableObject {
     let commandInterpreter: CommandInterpreter
     private let processingQueue: ProcessingQueue
     private var watcher: FileWatcher?
+    private var reviewCountTimer: Timer?
+
+    /// Which tab the popover shows. Lives here (not local `@State` on ContentView)
+    /// so AppDelegate can jump straight to Review when the user clicks a menu bar
+    /// badge indicating pending items, rather than whatever tab was last open.
+    @Published var selectedTab: ArchivistTab = .search
+
+    /// Drives the menu bar badge (AppDelegate observes this via Combine) — refreshed
+    /// on a timer since items can leave pending_review from user action in the
+    /// Review tab (Accept/Edit/Reject) or arrive from the watcher at any time, and
+    /// polling a small COUNT-scale query is simpler and just as correct as threading
+    /// a refresh callback through every mutation site.
+    @Published var pendingReviewCount: Int = 0
 
     static let supportDirectory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -63,11 +76,22 @@ final class AppEnvironment: ObservableObject {
             Task { await self?.processingQueue.enqueue(url) }
         }
         watcher?.start()
+
+        refreshReviewCount()
+        reviewCountTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
+            self?.refreshReviewCount()
+        }
     }
 
     func stopWatching() {
         print("[Archivist][AppEnvironment] stopWatching()")
         watcher?.stop()
         watcher = nil
+        reviewCountTimer?.invalidate()
+        reviewCountTimer = nil
+    }
+
+    func refreshReviewCount() {
+        pendingReviewCount = store.pendingReview().count
     }
 }
