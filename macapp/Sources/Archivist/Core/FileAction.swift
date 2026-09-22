@@ -31,9 +31,16 @@ enum FileAction {
         var existingFilenames = Set(siblings)
         existingFilenames.remove(name) // renaming to our own current name isn't a "collision"
 
+        // Case 1 (images) wants the file's actual date when it's known — EXIF
+        // capture date isn't read separately anywhere yet, so this falls back to
+        // the filesystem creation date, then to FilenameNomenclature's own
+        // "today" default if even that isn't available.
+        let fileDate = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+
         let input = FilenameNomenclature.Input(
             ownership: ownership, category: node.category, docType: docType,
-            title: title, personName: settings.personName, fileExtension: url.pathExtension
+            title: title, personName: settings.personName, fileExtension: url.pathExtension,
+            fileDate: fileDate
         )
         let newName = FilenameNomenclature.filename(for: input, existingFilenames: existingFilenames)
 

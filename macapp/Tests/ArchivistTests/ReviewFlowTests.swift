@@ -61,9 +61,9 @@ final class ReviewFlowTests: XCTestCase {
 
         XCTAssertNotNil(result, "accept should return the resolved node")
         XCTAssertEqual(result?.status, .indexed, "accept must flip status to indexed, matching a high-confidence auto-filed item")
-        XCTAssertEqual(result?.filename, "TUI320_PrototypingLecture_Slides.pdf")
+        XCTAssertEqual(result?.filename, "TUI320_PrototypingLecture.pdf", "ownership=other is Case 2: <Category>_<Title>, no doc type in the pattern")
         XCTAssertTrue(
-            FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("TUI320_PrototypingLecture_Slides.pdf").path),
+            FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("TUI320_PrototypingLecture.pdf").path),
             "the file itself must actually be renamed on disk, not just in the graph"
         )
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path), "the original ugly filename should no longer exist")
@@ -83,7 +83,61 @@ final class ReviewFlowTests: XCTestCase {
         XCTAssertEqual(result?.category, "TUI320", "edit's corrected category must overwrite the suggested one")
         XCTAssertEqual(Set(result?.tags ?? []), Set(["Design", "Prototyping"]), "edit's corrected tags must overwrite, not append to, the suggested set")
         XCTAssertEqual(result?.status, .indexed)
-        XCTAssertEqual(result?.filename, "TUI320_CorrectedTitle_Notes.pdf", "the corrected fields, not the originals, must drive the filename")
+        XCTAssertEqual(result?.filename, "TUI320_CorrectedTitle.pdf", "the corrected fields, not the originals, must drive the filename (Case 2: no doc type in the pattern)")
+    }
+
+    func testAcceptOwnFileAppendsPersonName() {
+        // Case 3: owned files append the person's name (from config), never
+        // inferred from the file — distinct from Case 2's plain <Category>_<Title>.
+        // settings.personName is backed by real UserDefaults.standard (not a
+        // test-only store), so the previous value is saved and restored exactly,
+        // never just deleted — this key may hold the user's actual configured name.
+        let key = "archivist.personName"
+        let previousValue = UserDefaults.standard.string(forKey: key)
+        defer {
+            if let previousValue {
+                UserDefaults.standard.set(previousValue, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        settings.personName = "Arunima"
+
+        let fileURL = makeFile(named: "Untitled6.docx")
+        let understanding = FileUnderstanding(
+            ownership: "own", category: "TUI320", docType: "Essay", title: "MidtermEssay",
+            summary: "The user's own midterm essay.", tags: ["Design"], confidence: 0.4,
+            reasoning: "Ambiguous course code in the excerpt."
+        )
+        let id = store.insertNode(
+            path: fileURL.path, filename: fileURL.lastPathComponent, understanding: understanding,
+            providerUsed: "test", extractedText: "excerpt", embedding: [], contentHash: "h6", status: .pendingReview
+        )
+        let node = store.node(id: id)!
+
+        let result = ReviewActions.accept(node: node, store: store, settings: settings)
+        XCTAssertEqual(result?.filename, "TUI320_MidtermEssay_Arunima.docx", "Case 3: <Category>_<Title>_<PersonFullName>")
+    }
+
+    func testAcceptImageUsesHyphenatedWhatItIsAndDate() {
+        // Case 1: images always use <WhatItIs>_<dd-mm-yyyy>, regardless of
+        // ownership — an image owned by the user still follows Case 1, not Case 3.
+        let fileURL = makeFile(named: "IMG_0001.jpg")
+        let understanding = FileUnderstanding(
+            ownership: "own", category: "Personal", docType: "Photo", title: "Whiteboard Notes",
+            summary: "A photo of a whiteboard.", tags: ["Notes"], confidence: 0.4,
+            reasoning: "No extractable text from an image."
+        )
+        let id = store.insertNode(
+            path: fileURL.path, filename: fileURL.lastPathComponent, understanding: understanding,
+            providerUsed: "test", extractedText: "", embedding: [], contentHash: "h7", status: .pendingReview
+        )
+        let node = store.node(id: id)!
+
+        let result = ReviewActions.accept(node: node, store: store, settings: settings)
+        XCTAssertNotNil(result)
+        XCTAssertTrue(result!.filename.hasPrefix("whiteboard-notes_"), "Case 1's <WhatItIs> is lowercase/hyphenated, not TitleCase")
+        XCTAssertTrue(result!.filename.hasSuffix(".jpg"))
     }
 
     func testRejectLeavesFileUntouchedAndOutOfQueue() {
