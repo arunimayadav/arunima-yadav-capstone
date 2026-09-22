@@ -19,6 +19,7 @@ final class GraphStore {
             fatalError("Unable to open GraphStore at \(path): \(String(cString: sqlite3_errmsg(db)))")
         }
         createSchema()
+        migrateSchema()
     }
 
     deinit {
@@ -84,6 +85,25 @@ final class GraphStore {
         """)
     }
 
+    /// `nodes` gained ownership/doc_type/title/reasoning after the table already
+    /// existed on disk for earlier-created graph.sqlite3 files (see skills/review.md,
+    /// which needs them to re-run Filename Nomenclature from Review) — CREATE TABLE
+    /// IF NOT EXISTS above won't add columns to an already-existing table, so each
+    /// ALTER TABLE is attempted here and its failure (column already exists) is
+    /// swallowed, making this safe to run on every launch regardless of whether the
+    /// column was already added by a previous run.
+    private func migrateSchema() {
+        let migrations = [
+            "ALTER TABLE nodes ADD COLUMN ownership TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE nodes ADD COLUMN doc_type TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE nodes ADD COLUMN title TEXT NOT NULL DEFAULT '';",
+            "ALTER TABLE nodes ADD COLUMN reasoning TEXT NOT NULL DEFAULT '';",
+        ]
+        for sql in migrations {
+            sqlite3_exec(db, sql, nil, nil, nil)
+        }
+    }
+
     // MARK: - Dedup
 
     func nodeExists(contentHash: String) -> Bool {
@@ -113,8 +133,9 @@ final class GraphStore {
             let now = Date().timeIntervalSince1970
             sqlite3_prepare_v2(db, """
                 INSERT INTO nodes (path, filename, category, summary, confidence, status,
-                    provider_used, extracted_text, embedding, content_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    provider_used, extracted_text, embedding, content_hash, created_at, updated_at,
+                    ownership, doc_type, title, reasoning)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, -1, &stmt, nil)
             sqlite3_bind_text(stmt, 1, path, -1, SQLiteTransient)
             sqlite3_bind_text(stmt, 2, filename, -1, SQLiteTransient)
@@ -131,6 +152,10 @@ final class GraphStore {
             sqlite3_bind_text(stmt, 10, contentHash, -1, SQLiteTransient)
             sqlite3_bind_double(stmt, 11, now)
             sqlite3_bind_double(stmt, 12, now)
+            sqlite3_bind_text(stmt, 13, understanding.ownership, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 14, understanding.docType, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 15, understanding.title, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 16, understanding.reasoning, -1, SQLiteTransient)
 
             let stepResult = sqlite3_step(stmt)
             guard stepResult == SQLITE_DONE else {
@@ -213,7 +238,8 @@ final class GraphStore {
         defer { sqlite3_finalize(stmt) }
         sqlite3_prepare_v2(db, """
             SELECT path, filename, category, summary, confidence, status, provider_used,
-                   extracted_text, embedding, content_hash, created_at, updated_at
+                   extracted_text, embedding, content_hash, created_at, updated_at,
+                   ownership, doc_type, title, reasoning
             FROM nodes WHERE id = ?;
         """, -1, &stmt, nil)
         sqlite3_bind_int64(stmt, 1, id)
@@ -237,11 +263,16 @@ final class GraphStore {
         let contentHash = String(cString: sqlite3_column_text(stmt, 9))
         let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 10))
         let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 11))
+        let ownership = String(cString: sqlite3_column_text(stmt, 12))
+        let docType = String(cString: sqlite3_column_text(stmt, 13))
+        let title = String(cString: sqlite3_column_text(stmt, 14))
+        let reasoning = String(cString: sqlite3_column_text(stmt, 15))
 
         return Node(id: id, path: path, filename: filename, category: category, summary: summary,
                     tags: tagsLocked(nodeId: id), confidence: confidence, status: status,
                     providerUsed: provider, extractedText: extractedText, embedding: embedding,
-                    contentHash: contentHash, createdAt: createdAt, updatedAt: updatedAt)
+                    contentHash: contentHash, createdAt: createdAt, updatedAt: updatedAt,
+                    ownership: ownership, docType: docType, title: title, reasoning: reasoning)
     }
 
     private func tagsLocked(nodeId: Int64) -> [String] {
@@ -262,6 +293,53 @@ final class GraphStore {
 
     func pendingReview() -> [Node] {
         allNodes().filter { $0.status == .pendingReview }
+    }
+
+    /// skills/review.md Step 3, Edit: overwrites the suggested category/tags/
+    /// ownership/docType/title with the reviewer's corrected values — "the
+    /// corrected values overwrite the suggested ones on the node," not appended
+    /// alongside them. Status is left alone here; the caller (ReviewActions)
+    /// decides the resulting status once File Action has actually run.
+    func updateNode(id: Int64, category: String, summary: String, tags: [String],
+                     ownership: String, docType: String, title: String) {
+        queue.sync {
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_prepare_v2(db, """
+                UPDATE nodes SET category = ?, summary = ?, ownership = ?, doc_type = ?,
+                    title = ?, updated_at = ?
+                WHERE id = ?;
+            """, -1, &stmt, nil)
+            sqlite3_bind_text(stmt, 1, category, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 2, summary, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 3, ownership, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 4, docType, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 5, title, -1, SQLiteTransient)
+            sqlite3_bind_double(stmt, 6, Date().timeIntervalSince1970)
+            sqlite3_bind_int64(stmt, 7, id)
+            sqlite3_step(stmt)
+
+            exec("DELETE FROM node_tags WHERE node_id = \(id);")
+            for tagName in tags {
+                let tagId = upsertTagLocked(tagName)
+                attachTagLocked(nodeId: id, tagId: tagId)
+            }
+        }
+    }
+
+    /// skills/review.md Step 3, Reject: "mark it rejected rather than pending... it
+    /// stays indexed/searchable either way." Also used by Accept/Edit to flip a
+    /// resolved node to `.indexed` once File Action has run.
+    func setStatus(id: Int64, status: NodeStatus) {
+        queue.sync {
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_prepare_v2(db, "UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?;", -1, &stmt, nil)
+            sqlite3_bind_text(stmt, 1, status.rawValue, -1, SQLiteTransient)
+            sqlite3_bind_double(stmt, 2, Date().timeIntervalSince1970)
+            sqlite3_bind_int64(stmt, 3, id)
+            sqlite3_step(stmt)
+        }
     }
 
     /// MVP keyword search over filename, content (summary + extracted text), tags,

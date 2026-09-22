@@ -16,12 +16,23 @@ struct Node: Identifiable, Codable {
     var contentHash: String
     var createdAt: Date
     var updatedAt: Date
+    /// Carried over from the original understanding call specifically so
+    /// skills/review.md can re-run Filename Nomenclature (Step 3, Accept/Edit)
+    /// against a pending_review node without re-asking the AI for them.
+    var ownership: String
+    var docType: String
+    var title: String
+    var reasoning: String
 }
 
 enum NodeStatus: String, Codable {
     case indexed
     case pendingReview = "pending_review"
     case duplicateSkipped = "duplicate_skipped"
+    /// skills/review.md Step 3: "leave the file untouched and mark it rejected
+    /// rather than pending, so it stops resurfacing in the queue." Still
+    /// indexed/searchable — only File Action and Relationship Builder skip it.
+    case rejected
 }
 
 /// One entry in the append-only `moves` log.

@@ -11,6 +11,10 @@ let package = Package(
                 .linkedLibrary("sqlite3"),
                 .linkedFramework("CoreServices")
             ]
+        ),
+        .testTarget(
+            name: "ArchivistTests",
+            dependencies: ["Archivist"]
         )
     ]
 )

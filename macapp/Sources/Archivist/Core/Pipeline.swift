@@ -110,81 +110,18 @@ final class Pipeline {
             return node
         }
 
-        // A file can be deleted or moved away out-of-band (by the user, by another
-        // app, or as a duplicate cleanup) in the minutes between insertion and this
-        // point — the AI call alone can take that long. Catching it here, before
-        // even attempting the rename, avoids leaving a permanently un-renamed,
-        // confusing "stuck with its original ugly name" record sitting in the graph
-        // forever with no path forward to fix itself.
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            print("[Archivist][Pipeline] \(name): source file no longer exists — it was likely deleted " +
-                  "or moved away while this was being processed. Removing this now-stale entry rather " +
-                  "than leaving it stuck with its pre-rename name.")
-            store.deleteNode(id: node.id)
+        // FileAction re-checks existence itself (a file can vanish out-of-band in
+        // the minutes an AI call can take), renames per skills/filename-nomenclature.md,
+        // logs the move, and writes Finder tags — the same path Review's accept/edit
+        // resolution uses (skills/review.md Step 3), so the two can't drift apart.
+        guard let finalNode = FileAction.apply(
+            node: node, ownership: understanding.ownership, docType: understanding.docType,
+            title: understanding.title, settings: settings, store: store, triggeredBy: "auto-rename"
+        ) else {
+            print("[Archivist][Pipeline] \(name): FileAction could not complete (source vanished or rename failed)")
             return nil
-        }
-
-        var finalNode = node
-        var finalURL = url
-        if let renamed = renameUsingSkill(node: node, understanding: understanding, at: url) {
-            finalURL = renamed.url
-            finalNode = renamed.node
-        } else if store.node(id: node.id) == nil {
-            // renameUsingSkill deleted the node itself (source vanished mid-move).
-            print("[Archivist][Pipeline] \(name): node was removed during the rename attempt — nothing to return")
-            return nil
-        }
-
-        if TagWriter.write(category: finalNode.category, tags: finalNode.tags, to: finalURL) {
-            print("[Archivist][Pipeline] \(finalURL.lastPathComponent): wrote Finder tags " +
-                  "\(Array(Set([finalNode.category] + finalNode.tags)))")
         }
 
         return finalNode
-    }
-
-    /// Applies skills/filename-nomenclature.md to a freshly-indexed file: assembles
-    /// the name (Step 1) via FilenameNomenclature using the ownership/category/
-    /// docType/title the understanding call produced (itself governed by that same
-    /// skill file — see PromptBuilder), resolves collisions against the destination
-    /// folder (Step 2), and actually performs the rename on disk + graph.
-    private func renameUsingSkill(node: Node, understanding: FileUnderstanding, at url: URL) -> (url: URL, node: Node)? {
-        let name = url.lastPathComponent
-        let directory = url.deletingLastPathComponent()
-        let siblings = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        var existingFilenames = Set(siblings)
-        existingFilenames.remove(name) // renaming to our own current name isn't a "collision"
-
-        let input = FilenameNomenclature.Input(
-            ownership: understanding.ownership, category: node.category, docType: understanding.docType,
-            title: understanding.title, personName: settings.personName, fileExtension: url.pathExtension
-        )
-        let newName = FilenameNomenclature.filename(for: input, existingFilenames: existingFilenames)
-
-        guard newName != name else {
-            print("[Archivist][Pipeline] \(name): naming skill produced the same name — no rename needed")
-            return nil
-        }
-
-        let newURL = directory.appendingPathComponent(newName)
-        do {
-            try FileManager.default.moveItem(at: url, to: newURL)
-        } catch {
-            if !FileManager.default.fileExists(atPath: url.path) {
-                // Vanished in the narrow window between Pipeline's own existence
-                // check and this move actually running — same cleanup as that check.
-                print("[Archivist][Pipeline] \(name): rename failed because the source vanished " +
-                      "mid-move — removing this now-stale entry: \(error)")
-                store.deleteNode(id: node.id)
-            } else {
-                print("[Archivist][Pipeline] \(name): rename to \(newName) FAILED: \(error)")
-            }
-            return nil
-        }
-
-        store.recordMove(nodeId: node.id, srcPath: url.path, dstPath: newURL.path, triggeredBy: "auto-rename")
-        guard let updated = store.node(id: node.id) else { return nil }
-        print("[Archivist][Pipeline] \(name): renamed -> \(newName)")
-        return (newURL, updated)
     }
 }

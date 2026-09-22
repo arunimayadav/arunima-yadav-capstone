@@ -49,7 +49,7 @@ struct ContentView: View {
                 case .command:
                     CommandView(interpreter: environment.commandInterpreter)
                 case .review:
-                    ReviewView(store: environment.store)
+                    ReviewView(store: environment.store, settings: environment.settings)
                 case .settings:
                     SettingsView(settings: environment.settings)
                 }
