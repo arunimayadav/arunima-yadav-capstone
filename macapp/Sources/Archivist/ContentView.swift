@@ -1,10 +1,11 @@
 import SwiftUI
 
-enum ArchivistTab: String, CaseIterable, Identifiable {
-    case search = "Search"
-    case command = "Organize"
-    case review = "Review"
-    var id: String { rawValue }
+enum ArchivistTab: CaseIterable, Identifiable {
+    case search
+    case command
+    case review
+    case settings
+    var id: Self { self }
 }
 
 /// The single popover surface for the whole app — plan.md section 6's
@@ -23,38 +24,24 @@ enum ArchivistTab: String, CaseIterable, Identifiable {
 /// typical document window.
 struct ContentView: View {
     @ObservedObject var environment: AppEnvironment
-    @State private var showSettings = false
 
     static let size = NSSize(width: 380, height: 460)
     private static let cornerRadius: CGFloat = 16
-    private static let settingsSize = NSSize(width: 320, height: 380)
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Picker("", selection: $environment.selectedTab) {
-                    ForEach(ArchivistTab.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
-
-                // Settings lives behind a gear rather than as a fourth tab, so the
-                // segmented control stays focused on the three things you actually
-                // switch between day-to-day.
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showSettings) {
-                    SettingsView(settings: environment.settings)
-                        .frame(width: Self.settingsSize.width, height: Self.settingsSize.height)
-                }
+            // One segmented control, same as before — Settings is just an
+            // icon-only segment (gearshape) instead of a text label, not a
+            // separate popover, so it swaps the main content area like every
+            // other tab.
+            Picker("", selection: $environment.selectedTab) {
+                Text("Search").tag(ArchivistTab.search)
+                Text("Organize").tag(ArchivistTab.command)
+                Text("Review").tag(ArchivistTab.review)
+                Image(systemName: "gearshape").tag(ArchivistTab.settings)
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 8)
@@ -69,6 +56,8 @@ struct ContentView: View {
                     CommandView(interpreter: environment.commandInterpreter)
                 case .review:
                     ReviewView(store: environment.store, settings: environment.settings)
+                case .settings:
+                    SettingsView(settings: environment.settings)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
