@@ -9,7 +9,8 @@ let package = Package(
             name: "Archivist",
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
-                .linkedFramework("CoreServices")
+                .linkedFramework("CoreServices"),
+                .linkedFramework("QuickLookThumbnailing")
             ]
         ),
         .testTarget(

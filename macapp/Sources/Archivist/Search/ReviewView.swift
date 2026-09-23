@@ -100,11 +100,7 @@ private struct ReviewCard: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
             let glyph = FileTypeGlyph.symbol(for: node.filename)
-            Image(systemName: glyph.name)
-                .font(.system(size: 15))
-                .foregroundStyle(glyph.tint)
-                .frame(width: 30, height: 30)
-                .background(glyph.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, size: 30)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

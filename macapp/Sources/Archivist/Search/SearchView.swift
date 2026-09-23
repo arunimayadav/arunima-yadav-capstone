@@ -25,16 +25,21 @@ struct SearchView: View {
                 )
             } else {
                 ScrollView {
-                    VStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 6) {
                         ForEach(results) { node in
                             SearchResultCard(
                                 node: node,
-                                showRelated: showRelated,
-                                related: showRelated ? store.connectedNodes(to: node.id) : [],
-                                onToggleRelated: { showRelated.toggle() },
                                 onOpen: {
                                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
                                 }
+                            )
+                            // "Show related" lives below the card, not inside its
+                            // background/padding — a separate, secondary action,
+                            // not part of the card itself.
+                            RelatedFilesSection(
+                                isExpanded: showRelated,
+                                related: showRelated ? store.connectedNodes(to: node.id) : [],
+                                onToggle: { showRelated.toggle() }
                             )
                         }
                     }
@@ -83,27 +88,22 @@ struct SearchView: View {
     }
 }
 
-/// A single search result: file-type icon, filename + category pill, a short
-/// description, and the date tucked in the top-right corner — clicking the card
-/// reveals it in Finder; "Show related" is a separate, explicit action.
+/// A single search result: a real thumbnail of the file's first page/content
+/// (not just a type glyph), filename + the tag actually assigned to it, a
+/// description you can tap to read in full, and the date tucked in the card's
+/// corner. Tapping the icon/filename/tag row reveals the file in Finder; tapping
+/// the description instead expands or collapses it in place.
 private struct SearchResultCard: View {
     let node: Node
-    let showRelated: Bool
-    let related: [Node]
-    let onToggleRelated: () -> Void
     let onOpen: () -> Void
 
-    @State private var isRelatedLinkHovered = false
+    @State private var isSummaryExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 let glyph = FileTypeGlyph.symbol(for: node.filename)
-                Image(systemName: glyph.name)
-                    .font(.system(size: 17))
-                    .foregroundStyle(glyph.tint)
-                    .frame(width: 40, height: 40)
-                    .background(glyph.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, size: 40)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -112,48 +112,27 @@ private struct SearchResultCard: View {
                             .foregroundStyle(Color.black)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        TagPill(text: node.category)
+                        // The tag actually assigned to the file (same as its
+                        // Finder tag), not the broader classification bucket —
+                        // falls back to category only if no topic tag exists.
+                        TagPill(text: node.tags.first ?? node.category)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onOpen)
+
                     Text(node.summary)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(ArchivistPalette.secondaryText)
-                        .lineLimit(2)
+                        .lineLimit(isSummaryExpanded ? nil : 2)
+                        .contentShape(Rectangle())
+                        .onTapGesture { isSummaryExpanded.toggle() }
                 }
                 // Reserves room so text never runs under the date, which is laid
                 // out separately as an absolutely-positioned overlay in the card's
                 // corner rather than as a sibling in this row.
                 .padding(.trailing, 32)
             }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onOpen)
             .hoverHighlight(cornerRadius: 8)
-
-            if showRelated {
-                Divider().opacity(0.5)
-                if related.isEmpty {
-                    Text("No related files yet.")
-                        .font(ArchivistType.caption)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(related.prefix(4)) { r in
-                            Text(r.filename)
-                                .font(ArchivistType.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-            }
-
-            Button(action: onToggleRelated) {
-                Text(showRelated ? "Hide related" : "Show related")
-                    .font(ArchivistType.caption.weight(.medium))
-                    .foregroundStyle(Color.accentColor.opacity(isRelatedLinkHovered ? 0.75 : 1))
-                    .underline(isRelatedLinkHovered)
-            }
-            .buttonStyle(.plain)
-            .onHover { isRelatedLinkHovered = $0 }
         }
         .padding(12)
         .frame(minHeight: 64, alignment: .topLeading)
@@ -165,5 +144,50 @@ private struct SearchResultCard: View {
                 .padding(.top, 12)
                 .padding(.trailing, 12)
         }
+    }
+}
+
+/// "Show related" and the connected-files list, rendered below the card rather
+/// than inside its background/padding — a secondary, optional action, not part
+/// of the card itself.
+private struct RelatedFilesSection: View {
+    let isExpanded: Bool
+    let related: [Node]
+    let onToggle: () -> Void
+
+    @State private var isLinkHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: onToggle) {
+                Text(isExpanded ? "Hide related" : "Show related")
+                    .font(ArchivistType.caption.weight(.medium))
+                    .foregroundStyle(Color.accentColor.opacity(isLinkHovered ? 0.75 : 1))
+                    .underline(isLinkHovered)
+            }
+            .buttonStyle(.plain)
+            .onHover { isLinkHovered = $0 }
+            .padding(.horizontal, 4)
+
+            if isExpanded {
+                if related.isEmpty {
+                    Text("No related files yet.")
+                        .font(ArchivistType.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 4)
+                } else {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(related.prefix(4)) { r in
+                            Text(r.filename)
+                                .font(ArchivistType.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+            }
+        }
+        .padding(.bottom, 4)
     }
 }
