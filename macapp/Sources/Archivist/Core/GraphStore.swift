@@ -507,4 +507,24 @@ final class GraphStore {
             exec("DELETE FROM nodes WHERE id = \(id);")
         }
     }
+
+    /// The DB half of undo (plan.md section 5 step 14, "`archivist undo <id>`
+    /// reverses it using the move log"): marks the move row reversed and restores
+    /// the node's path/filename to the move's original source. The caller is
+    /// responsible for actually moving the file back on disk first — this only
+    /// updates state, matching how `recordMove` doesn't do the file I/O either.
+    func markMoveReversed(id: Int64, nodeId: Int64, restoredPath: String) {
+        queue.sync {
+            exec("UPDATE moves SET reversed = 1 WHERE id = \(id);")
+
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_prepare_v2(db, "UPDATE nodes SET path = ?, filename = ?, updated_at = ? WHERE id = ?;", -1, &stmt, nil)
+            sqlite3_bind_text(stmt, 1, restoredPath, -1, SQLiteTransient)
+            sqlite3_bind_text(stmt, 2, URL(fileURLWithPath: restoredPath).lastPathComponent, -1, SQLiteTransient)
+            sqlite3_bind_double(stmt, 3, Date().timeIntervalSince1970)
+            sqlite3_bind_int64(stmt, 4, nodeId)
+            sqlite3_step(stmt)
+        }
+    }
 }

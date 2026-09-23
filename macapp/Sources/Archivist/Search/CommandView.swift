@@ -9,6 +9,16 @@ struct CommandView: View {
     @State private var proposal: ProposedAction?
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @State private var moveOutcome: MoveOutcome?
+
+    /// What to tell the user after Confirm and Move (or Undo) actually finishes —
+    /// clicking the button previously gave no feedback at all once the move
+    /// completed, so there was no way to tell it had worked, what it was called,
+    /// or where to find it without opening Finder yourself.
+    private enum MoveOutcome {
+        case moved(folderName: String, locationName: String, count: Int, records: [MoveRecord])
+        case undone(folderName: String, locationName: String)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,6 +39,8 @@ struct CommandView: View {
 
             if let proposal {
                 proposalView(proposal)
+            } else if let moveOutcome {
+                moveOutcomeView(moveOutcome)
             } else if !isLoading && errorMessage == nil && instruction.isEmpty {
                 EmptyStateView(
                     systemImage: "wand.and.stars",
@@ -39,6 +51,43 @@ struct CommandView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 16)
+    }
+
+    /// Feedback after a move (or its undo) — folder name and location spelled out
+    /// explicitly, plus a one-tap Undo while the outcome is still "moved".
+    @ViewBuilder
+    private func moveOutcomeView(_ outcome: MoveOutcome) -> some View {
+        switch outcome {
+        case .moved(let folderName, let locationName, let count, let records):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Moved \(count) file\(count == 1 ? "" : "s") to “\(folderName)” in \(locationName).")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(ArchivistPalette.secondaryText)
+                }
+                Button("Undo") {
+                    interpreter.undo(records)
+                    moveOutcome = .undone(folderName: folderName, locationName: locationName)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(12)
+            .background(ArchivistPalette.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+        case .undone(let folderName, let locationName):
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .foregroundStyle(.secondary)
+                Text("Undone — files moved back from “\(folderName)” in \(locationName).")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(ArchivistPalette.secondaryText)
+            }
+            .padding(12)
+            .background(ArchivistPalette.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
     }
 
     private var instructionField: some View {
@@ -99,6 +148,7 @@ struct CommandView: View {
     private func propose() {
         errorMessage = nil
         proposal = nil
+        moveOutcome = nil
         isLoading = true
         Task {
             defer { isLoading = false }
@@ -115,9 +165,11 @@ struct CommandView: View {
     private func execute(_ action: ProposedAction) {
         let downloads = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
         do {
-            _ = try interpreter.execute(action, into: downloads)
+            let records = try interpreter.execute(action, into: downloads)
             proposal = nil
             instruction = ""
+            moveOutcome = .moved(folderName: action.destinationFolderName, locationName: downloads.lastPathComponent,
+                                  count: records.count, records: records)
         } catch {
             errorMessage = "Move failed: \(error)"
         }

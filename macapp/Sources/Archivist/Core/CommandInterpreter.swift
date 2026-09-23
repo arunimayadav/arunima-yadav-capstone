@@ -51,6 +51,38 @@ final class CommandInterpreter {
         return moved
     }
 
+    /// Reverses a set of moves this command just made: moves each file back to its
+    /// original location, marks the move log entries reversed, and removes the
+    /// destination folder if undoing left it empty. Best-effort per file — a file
+    /// the user has since touched (renamed, moved again) is skipped rather than
+    /// failing the whole undo.
+    @discardableResult
+    func undo(_ moves: [MoveRecord]) -> Int {
+        var restored = 0
+        for move in moves {
+            let dst = URL(fileURLWithPath: move.dstPath)
+            let src = URL(fileURLWithPath: move.srcPath)
+            guard FileManager.default.fileExists(atPath: dst.path) else {
+                print("[Archivist][CommandInterpreter] undo: \(move.dstPath) no longer exists there — skipping")
+                continue
+            }
+            do {
+                try FileManager.default.moveItem(at: dst, to: src)
+                store.markMoveReversed(id: move.id, nodeId: move.nodeId, restoredPath: src.path)
+                restored += 1
+            } catch {
+                print("[Archivist][CommandInterpreter] undo failed for \(move.dstPath): \(error)")
+            }
+        }
+
+        if let folder = moves.first.map({ URL(fileURLWithPath: $0.dstPath).deletingLastPathComponent() }),
+           let remaining = try? FileManager.default.contentsOfDirectory(atPath: folder.path), remaining.isEmpty {
+            try? FileManager.default.removeItem(at: folder)
+        }
+
+        return restored
+    }
+
     /// Never overwrite an existing file at the destination — append a disambiguating
     /// suffix instead (plan.md section 7 edge cases).
     private func uniqueDestination(for url: URL) -> URL {
