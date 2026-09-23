@@ -14,7 +14,15 @@ enum TagWriter {
 
     @discardableResult
     static func write(category: String, tags: [String], to url: URL) -> Bool {
-        let colorIndex = colorLabel(for: category) // 1-7
+        // Keyed off the primary *tag* (what's actually shown in the UI's pill),
+        // not category — category alone let files that share a category but ended
+        // up with a stale/different tag (before Pipeline's Step-0 enforcement was
+        // added) show mismatched colors. Now that "same category -> same tag" is
+        // guaranteed upstream, keying on the tag directly means "same tag, same
+        // color" holds unconditionally, not just as a side effect of category
+        // hashing to the same bucket.
+        let colorKey = tags.first ?? category
+        let colorIndex = colorLabel(for: colorKey) // 1-7
         let colorName = labelColorNames[colorIndex - 1]
 
         // De-duplicated: the AI's own "tags" list can legitimately repeat the

@@ -75,11 +75,24 @@ final class Pipeline {
 
         let existingTags = Set(store.allNodes().flatMap { $0.tags }).sorted()
         print("[Archivist][Pipeline] \(name): calling AI provider to classify/summarize/tag…")
-        let (understanding, providerUsed) = await router.understand(
+        var (understanding, providerUsed) = await router.understand(
             excerpt: excerpt, filename: name, existingTags: existingTags
         )
         print("[Archivist][Pipeline] \(name): understood via \(providerUsed) -> " +
               "category=\(understanding.category) confidence=\(understanding.confidence) tags=\(understanding.tags)")
+
+        // skills/tagging.md Step 0, enforced rather than trusted: if this category
+        // already has an established tag from other files, that tag wins over
+        // whatever the model proposed for THIS file — guarantees "same category,
+        // same tag" instead of hoping the model stays consistent call to call
+        // (real usage showed it doesn't, e.g. "Essay" on one file, "Essays" or
+        // "Course Essay" on another file classified into the same category).
+        if let canonicalTag = store.primaryTag(forCategory: understanding.category),
+           !understanding.tags.contains(where: { $0.caseInsensitiveCompare(canonicalTag) == .orderedSame }) {
+            print("[Archivist][Pipeline] \(name): category \"\(understanding.category)\" already has " +
+                  "established tag \"\(canonicalTag)\" — using it instead of \(understanding.tags)")
+            understanding.tags = [canonicalTag] + understanding.tags
+        }
 
         let embedding = await router.embed(text: excerpt) ?? []
         print("[Archivist][Pipeline] \(name): embedding vector length = \(embedding.count) " +

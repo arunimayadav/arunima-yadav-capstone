@@ -9,6 +9,12 @@ existing_tags: the full list of tag names already in the graph's tags table
 category: category from Classification, if available, useful context but not a substitute for a tag
 title_source: extracted text excerpt and/or original filename, for extra context when content_excerpt is thin
 
+Step 0: Category is the strongest signal for tag reuse — check this first
+Before judging semantic fit in Step 1: has any existing file with this SAME category already been assigned a tag?
+If yes, that is very likely the right tag for this file too. Apply it directly, without re-deriving a fresh tag from this file's own content.
+This is the concrete, checkable form of Step 1's "reasonably fits" test: two files sharing a category are, by definition, the same general subject as far as this vocabulary is concerned, so they should end up sharing a tag, not each getting their own close-but-different variant (both files classified as "Essay" get the exact same tag; not one "Essay" and the other "Essays" or "Course Essay" or "Writing" — those are the same thing wearing different names, which is exactly the sprawl this skill exists to prevent).
+Only deviate from the category's established tag when the file's content is clearly about something more specific that you'd expect OTHER FUTURE files of this same category to also share — not a one-off distinction that only applies to this single file (that bar is Step 2's, for minting a new tag at all).
+
 Step 1: Try to reuse an existing tag
 Read existing_tags first, before considering any new tag.
 Ask: does the file's actual subject matter reasonably fit one of these already?
@@ -27,3 +33,4 @@ Tags are short, plain, and reusable, title case, no punctuation beyond spaces (F
 Never emit a tag that's a one-off, hyper-specific label built from this file's own title or date.
 When in doubt between reusing a close-but-imperfect existing tag and minting a precise new one, reuse. Vocabulary size is the thing being protected here.
 A file can reasonably take more than one tag if it genuinely spans two subjects (e.g. an invoice from a club could be both Finance and Club), but don't stack tags just to hedge, if one tag captures it, use one.
+Same category, same tag, every time. This is the primary correctness test for this skill: pull up every file with a given category and check whether they share a tag. If two files have the same category but different (non-overlapping) tags, that's a tagging bug, not an acceptable judgment-call difference — Step 0 exists specifically to prevent it.
