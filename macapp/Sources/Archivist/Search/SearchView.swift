@@ -100,30 +100,29 @@ private struct SearchResultCard: View {
             HStack(alignment: .top, spacing: 10) {
                 let glyph = FileTypeGlyph.symbol(for: node.filename)
                 Image(systemName: glyph.name)
-                    .font(.system(size: 15))
+                    .font(.system(size: 17))
                     .foregroundStyle(glyph.tint)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 40, height: 40)
                     .background(glyph.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(node.filename)
-                            .font(ArchivistType.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.black)
                             .lineLimit(1)
-                            .truncationMode(.middle)
+                            .truncationMode(.tail)
                         TagPill(text: node.category)
                     }
                     Text(node.summary)
-                        .font(ArchivistType.body)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(ArchivistPalette.secondaryText)
                         .lineLimit(2)
                 }
-
-                Spacer(minLength: 4)
-
-                Text(RelativeDate.string(from: node.createdAt))
-                    .font(ArchivistType.caption)
-                    .foregroundStyle(.tertiary)
+                // Reserves room so text never runs under the date, which is laid
+                // out separately as an absolutely-positioned overlay in the card's
+                // corner rather than as a sibling in this row.
+                .padding(.trailing, 32)
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onOpen)
@@ -157,10 +156,14 @@ private struct SearchResultCard: View {
             .onHover { isRelatedLinkHovered = $0 }
         }
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .frame(minHeight: 64, alignment: .topLeading)
+        .background(ArchivistPalette.cardBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            Text(RelativeDate.string(from: node.createdAt))
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(ArchivistPalette.tertiaryText)
+                .padding(.top, 12)
+                .padding(.trailing, 12)
+        }
     }
 }

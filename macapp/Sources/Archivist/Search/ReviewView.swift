@@ -112,10 +112,10 @@ private struct ReviewCard: View {
                         .font(ArchivistType.title)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    TagPill(text: node.category, tint: .orange)
-                    TagPill(text: node.ownership, tint: .purple)
+                    TagPill(text: node.category, background: Color.orange.opacity(0.15), foreground: .orange)
+                    TagPill(text: node.ownership, background: Color.purple.opacity(0.15), foreground: .purple)
                     if !node.docType.isEmpty {
-                        TagPill(text: node.docType, tint: .gray)
+                        TagPill(text: node.docType, background: Color.gray.opacity(0.15), foreground: .gray)
                     }
                 }
                 Button {

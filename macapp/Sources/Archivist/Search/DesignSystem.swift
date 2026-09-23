@@ -9,7 +9,6 @@ enum ArchivistType {
     static let title = Font.system(size: 13, weight: .semibold)
     static let body = Font.system(size: 11, weight: .regular)
     static let caption = Font.system(size: 10, weight: .regular)
-    static let pill = Font.system(size: 10, weight: .medium)
 }
 
 extension Color {
@@ -36,22 +35,34 @@ enum ArchivistPalette {
     static let secondaryText = Color(hex: "6E6E73")
     static let placeholderText = Color(hex: "8E8E93")
     static let emptyStateIcon = Color(hex: "8E8E93").opacity(0.4)
+    static let cardBackground = Color(hex: "F0F0F2")
+    static let tertiaryText = Color(hex: "8E8E93")
+
+    /// Muted tint pairs for TagPill: a pale background with a saturated,
+    /// same-hue foreground, rather than one color used at two opacities — matches
+    /// the spec's explicit (background, text) pair for the default blue pill.
+    static let tagBlueBackground = Color(hex: "E5F0FF")
+    static let tagBlueForeground = Color(hex: "0066CC")
 }
 
 /// A small rounded label for a category/tag — the single source of "what kind of
-/// file is this" on a card, replacing a separate keywords row.
+/// file is this" on a card, replacing a separate keywords row. Uses an explicit
+/// (background, foreground) pair rather than a single tint at varying opacity,
+/// since the muted-pill look calls for two related-but-distinct shades, not just
+/// one color diluted.
 struct TagPill: View {
     let text: String
-    var tint: Color = .accentColor
+    var background: Color = ArchivistPalette.tagBlueBackground
+    var foreground: Color = ArchivistPalette.tagBlueForeground
 
     var body: some View {
         Text(text)
-            .font(ArchivistType.pill)
+            .font(.system(size: 11, weight: .medium))
             .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2.5)
-            .background(tint.opacity(0.16), in: Capsule(style: .continuous))
-            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(background, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .foregroundStyle(foreground)
     }
 }
 

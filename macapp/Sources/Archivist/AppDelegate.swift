@@ -88,10 +88,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
 
         if withBadge {
-            let diameter: CGFloat = 6.5
-            let dotRect = NSRect(x: size.width - diameter, y: size.height - diameter,
+            // 8x8 red dot with a 1px white border separating it from the glyph —
+            // inset from the true corner by the border width so the border itself
+            // doesn't get clipped by the canvas edge.
+            let diameter: CGFloat = 8
+            let borderWidth: CGFloat = 1
+            let dotRect = NSRect(x: size.width - diameter - borderWidth, y: size.height - diameter - borderWidth,
                                   width: diameter, height: diameter)
-            NSColor.systemRed.setFill()
+            let borderRect = dotRect.insetBy(dx: -borderWidth, dy: -borderWidth)
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: borderRect).fill()
+            NSColor(red: 1.0, green: 0x3B / 255.0, blue: 0x30 / 255.0, alpha: 1).setFill()
             NSBezierPath(ovalIn: dotRect).fill()
         }
         image.unlockFocus()
