@@ -25,28 +25,12 @@ enum ArchivistTab: CaseIterable, Identifiable {
 struct ContentView: View {
     @ObservedObject var environment: AppEnvironment
 
-    static let size = NSSize(width: 380, height: 460)
+    static let size = NSSize(width: 380, height: 520)
     private static let cornerRadius: CGFloat = 16
 
     var body: some View {
         VStack(spacing: 0) {
-            // One segmented control, same as before — Settings is just an
-            // icon-only segment (gearshape) instead of a text label, not a
-            // separate popover, so it swaps the main content area like every
-            // other tab.
-            Picker("", selection: $environment.selectedTab) {
-                Text("Search").tag(ArchivistTab.search)
-                Text("Organize").tag(ArchivistTab.command)
-                Text("Review").tag(ArchivistTab.review)
-                Image(systemName: "gearshape").tag(ArchivistTab.settings)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
-
-            Divider().opacity(0.5)
+            TopBar(selectedTab: $environment.selectedTab)
 
             Group {
                 switch environment.selectedTab {
@@ -64,6 +48,88 @@ struct ContentView: View {
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .background(.ultraThinMaterial)
+        // SwiftUI's `.continuous` style is the same squircle-interpolation corner
+        // Apple's own system chrome uses (app icons, Control Center) — the closest
+        // native equivalent to a Figma "corner smoothing" value; SwiftUI doesn't
+        // expose a separate numeric smoothing parameter to tune further.
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+    }
+}
+
+/// The tab row: a custom segmented control (native `Picker(.segmented)` can't be
+/// restyled to exact spec colors/shadow) plus a separate circular settings button,
+/// per spec: distinct elements sharing one row, not one control with 4 segments.
+private struct TopBar: View {
+    @Binding var selectedTab: ArchivistTab
+    @State private var hoveredTab: ArchivistTab?
+    @State private var isGearHovered = false
+
+    private let tabs: [(tab: ArchivistTab, label: String)] = [
+        (.search, "Search"), (.command, "Organize"), (.review, "Review")
+    ]
+
+    var body: some View {
+        HStack(spacing: 16) {
+            segmentedControl
+            gearButton
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+    }
+
+    private var segmentedControl: some View {
+        HStack(spacing: 0) {
+            ForEach(tabs, id: \.tab) { entry in
+                segment(entry.tab, entry.label)
+            }
+        }
+        .padding(2)
+        .frame(height: 32)
+        .background(ArchivistPalette.segmentedBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func segment(_ tab: ArchivistTab, _ label: String) -> some View {
+        let isSelected = selectedTab == tab
+        return Text(label)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(isSelected ? Color.black : ArchivistPalette.secondaryText)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white)
+                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                } else if hoveredTab == tab {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.black.opacity(0.04))
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { selectedTab = tab }
+            .onHover { hovering in hoveredTab = hovering ? tab : nil }
+    }
+
+    private var gearButton: some View {
+        let isSelected = selectedTab == .settings
+        return Button {
+            selectedTab = .settings
+        } label: {
+            ZStack {
+                Circle().fill(ArchivistPalette.segmentedBackground)
+                if isSelected {
+                    Circle().fill(Color.black.opacity(0.08))
+                } else if isGearHovered {
+                    Circle().fill(Color.black.opacity(0.05))
+                }
+                Image(systemName: "gearshape")
+                    .font(.system(size: 16))
+                    .foregroundStyle(ArchivistPalette.secondaryText)
+            }
+            .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .onHover { isGearHovered = $0 }
     }
 }

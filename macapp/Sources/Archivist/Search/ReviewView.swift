@@ -13,13 +13,11 @@ struct ReviewView: View {
     @State private var items: [Node] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if items.isEmpty {
                 EmptyStateView(
                     systemImage: "checkmark.circle",
-                    instruction: "Nothing needs review — low-confidence files will show up here.",
-                    examples: [],
-                    onSelectExample: { _ in }
+                    instruction: "Nothing needs review — low-confidence files will show up here."
                 )
             } else {
                 ScrollView {
@@ -31,7 +29,9 @@ struct ReviewView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
         .onAppear(perform: refresh)
     }
 
@@ -50,6 +50,7 @@ private struct ReviewCard: View {
     let onResolved: () -> Void
 
     @State private var isEditing = false
+    @State private var isRevealHovered = false
     @State private var categoryText: String
     @State private var docTypeText: String
     @State private var titleText: String
@@ -122,9 +123,11 @@ private struct ReviewCard: View {
                 } label: {
                     Text("Reveal in Finder")
                         .font(ArchivistType.caption.weight(.medium))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color.accentColor.opacity(isRevealHovered ? 0.75 : 1))
+                        .underline(isRevealHovered)
                 }
                 .buttonStyle(.plain)
+                .onHover { isRevealHovered = $0 }
             }
 
             Spacer(minLength: 4)

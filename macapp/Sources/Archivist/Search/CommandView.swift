@@ -10,14 +10,8 @@ struct CommandView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
 
-    private let examples = [
-        "Put my bank files in one folder",
-        "Group all lecture slides",
-        "Organize receipts by month"
-    ]
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             instructionField
 
             if isLoading {
@@ -38,30 +32,29 @@ struct CommandView: View {
             } else if !isLoading && errorMessage == nil && instruction.isEmpty {
                 EmptyStateView(
                     systemImage: "wand.and.stars",
-                    instruction: "Describe how you'd like your files organized.",
-                    examples: examples,
-                    onSelectExample: { example in
-                        instruction = example
-                        propose()
-                    }
+                    instruction: "Describe how you'd like your files organized."
                 )
             }
         }
-        .padding(14)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
     }
 
     private var instructionField: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "wand.and.stars")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField("What should Archivist organize?", text: $instruction, onCommit: propose)
+                .font(.system(size: 14))
+                .foregroundStyle(ArchivistPalette.placeholderText)
+            TextField("", text: $instruction,
+                      prompt: Text("What should Archivist organize?").foregroundColor(ArchivistPalette.placeholderText))
                 .textFieldStyle(.plain)
-                .font(ArchivistType.body)
+                .font(.system(size: 13, weight: .regular))
+                .onSubmit(propose)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 10)
+        .frame(height: 36)
+        .background(ArchivistPalette.searchFieldBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func proposalView(_ proposal: ProposedAction) -> some View {
@@ -86,6 +79,7 @@ struct CommandView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .hoverHighlight(cornerRadius: 6)
                     }
                 }
             }

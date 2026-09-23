@@ -10,11 +10,10 @@ struct SearchView: View {
     @State private var results: [Node] = []
     @State private var hasSearched = false
     @State private var showRelated = false
-
-    private let examples = ["resume", "invoice", "lecture notes", "receipt"]
+    @State private var isClearHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             searchField
 
             if results.isEmpty {
@@ -22,12 +21,7 @@ struct SearchView: View {
                     systemImage: "magnifyingglass",
                     instruction: hasSearched
                         ? "No matches for “\(query)”. Try another word from the file's name, content, or tag."
-                        : "Search by filename, content, or tag.",
-                    examples: examples,
-                    onSelectExample: { example in
-                        query = example
-                        runSearch()
-                    }
+                        : "Search by filename, content, or tag."
                 )
             } else {
                 ScrollView {
@@ -47,20 +41,22 @@ struct SearchView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
     }
 
-    /// A native-feeling search field: leading glass icon, plain (chromeless) text
-    /// field, trailing clear button — matching macOS's system search fields
-    /// (Mail, Notes sidebar) rather than a generic bordered `TextField`.
+    /// A native-feeling, "inset" search field — matching macOS's system search
+    /// fields (Mail, Notes sidebar) rather than a generic bordered `TextField`.
     private var searchField: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField("Search your files", text: $query, onCommit: runSearch)
+                .font(.system(size: 14))
+                .foregroundStyle(ArchivistPalette.placeholderText)
+            TextField("", text: $query, prompt: Text("Search your files").foregroundColor(ArchivistPalette.placeholderText))
                 .textFieldStyle(.plain)
-                .font(ArchivistType.body)
+                .font(.system(size: 13, weight: .regular))
+                .onSubmit(runSearch)
                 .onChange(of: query) { _ in runSearch() }
             if !query.isEmpty {
                 Button {
@@ -68,15 +64,16 @@ struct SearchView: View {
                     runSearch()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(ArchivistPalette.placeholderText.opacity(isClearHovered ? 1 : 0.7))
                 }
                 .buttonStyle(.plain)
+                .onHover { isClearHovered = $0 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 10)
+        .frame(height: 36)
+        .background(ArchivistPalette.searchFieldBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func runSearch() {
@@ -95,6 +92,8 @@ private struct SearchResultCard: View {
     let related: [Node]
     let onToggleRelated: () -> Void
     let onOpen: () -> Void
+
+    @State private var isRelatedLinkHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -128,6 +127,7 @@ private struct SearchResultCard: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onOpen)
+            .hoverHighlight(cornerRadius: 8)
 
             if showRelated {
                 Divider().opacity(0.5)
@@ -150,9 +150,11 @@ private struct SearchResultCard: View {
             Button(action: onToggleRelated) {
                 Text(showRelated ? "Hide related" : "Show related")
                     .font(ArchivistType.caption.weight(.medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.accentColor.opacity(isRelatedLinkHovered ? 0.75 : 1))
+                    .underline(isRelatedLinkHovered)
             }
             .buttonStyle(.plain)
+            .onHover { isRelatedLinkHovered = $0 }
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

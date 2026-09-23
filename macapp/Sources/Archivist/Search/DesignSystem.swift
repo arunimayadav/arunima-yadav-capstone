@@ -10,7 +10,32 @@ enum ArchivistType {
     static let body = Font.system(size: 11, weight: .regular)
     static let caption = Font.system(size: 10, weight: .regular)
     static let pill = Font.system(size: 10, weight: .medium)
-    static let chip = Font.system(size: 11, weight: .medium)
+}
+
+extension Color {
+    /// "#RRGGBB" (with or without the leading `#`) — used for exact palette hex
+    /// values that don't map to a system semantic color.
+    init(hex: String) {
+        let sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        var value: UInt64 = 0
+        Scanner(string: sanitized).scanHexInt64(&value)
+        self.init(
+            red: Double((value & 0xFF0000) >> 16) / 255,
+            green: Double((value & 0x00FF00) >> 8) / 255,
+            blue: Double(value & 0x0000FF) / 255
+        )
+    }
+}
+
+/// Exact palette values from the popover design spec — kept as named constants
+/// rather than inlined hex strings so the same shade is guaranteed identical
+/// everywhere it's used.
+enum ArchivistPalette {
+    static let segmentedBackground = Color(hex: "E8E8ED")
+    static let searchFieldBackground = Color(hex: "EBEBEF")
+    static let secondaryText = Color(hex: "6E6E73")
+    static let placeholderText = Color(hex: "8E8E93")
+    static let emptyStateIcon = Color(hex: "8E8E93").opacity(0.4)
 }
 
 /// A small rounded label for a category/tag — the single source of "what kind of
@@ -59,99 +84,50 @@ enum RelativeDate {
     }
 }
 
-/// A tappable suggestion chip for empty states — filling in the text field with
-/// an example, not executing anything itself.
-struct ExampleChip: View {
-    let text: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(text)
-                .font(ArchivistType.chip)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// Shared empty-state layout for Search and Organize: an icon, one instructional
-/// line, and a wrapped row of example chips that seed the text field. Keeps both
-/// tabs teaching the same way instead of just showing a blank list.
+/// Shared empty-state layout for Search, Organize, and Review: an icon plus one
+/// instructional line, positioned slightly above true center rather than
+/// perfectly centered. No example chips — removed by design decision in favor of
+/// a plainer, quieter empty state.
 struct EmptyStateView: View {
     let systemImage: String
     let instruction: String
-    let examples: [String]
-    let onSelectExample: (String) -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Spacer(minLength: 0)
+        VStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 28, weight: .light))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(ArchivistPalette.emptyStateIcon)
             Text(instruction)
-                .font(ArchivistType.body)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(ArchivistPalette.secondaryText)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
-            // Wraps onto multiple lines rather than clipping/scrolling horizontally
-            // — reads more like an iOS suggestions row.
-            WrapLayout(spacing: 6) {
-                ForEach(examples, id: \.self) { example in
-                    ExampleChip(text: example) { onSelectExample(example) }
-                }
-            }
-            .padding(.horizontal, 20)
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 90)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
-/// Minimal manual flow layout (no iOS-only `Layout` protocol dependency issues) —
-/// arranges children left-to-right, wrapping to a new row when the next child
-/// would overflow the available width.
-struct WrapLayout: Layout {
-    var spacing: CGFloat = 6
+/// Applies a subtle hover highlight to any view — the standard feedback for
+/// pointer-driven macOS UI (segmented tabs, the settings gear, cards, link-style
+/// buttons) that SwiftUI doesn't provide automatically for custom-drawn controls.
+struct HoverHighlight: ViewModifier {
+    var cornerRadius: CGFloat = 8
+    var opacity: Double = 0.05
+    @State private var isHovering = false
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var rowWidth: CGFloat = 0
-        var totalHeight: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if rowWidth + size.width > maxWidth, rowWidth > 0 {
-                totalHeight += rowHeight + spacing
-                rowWidth = 0
-                rowHeight = 0
-            }
-            rowWidth += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        totalHeight += rowHeight
-        return CGSize(width: maxWidth, height: totalHeight)
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.primary.opacity(isHovering ? opacity : 0))
+            )
+            .onHover { isHovering = $0 }
     }
+}
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX, x > bounds.minX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: .unspecified)
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
+extension View {
+    func hoverHighlight(cornerRadius: CGFloat = 8, opacity: Double = 0.05) -> some View {
+        modifier(HoverHighlight(cornerRadius: cornerRadius, opacity: opacity))
     }
 }
