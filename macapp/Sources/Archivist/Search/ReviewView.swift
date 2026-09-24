@@ -31,20 +31,23 @@ struct ReviewView: View {
                 .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
-            if items.isEmpty {
-                EmptyStateView(
-                    systemImage: "checkmark.circle",
-                    instruction: "Nothing needs review — low-confidence files will show up here."
-                )
-            } else {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(items) { node in
-                            ReviewCard(node: node, store: store, settings: settings, onResolved: resolved)
+            Group {
+                if items.isEmpty {
+                    EmptyStateView(
+                        systemImage: "checkmark.circle",
+                        instruction: "Nothing needs review — low-confidence files will show up here."
+                    )
+                } else {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(items) { node in
+                                ReviewCard(node: node, store: store, settings: settings, onResolved: resolved)
+                            }
                         }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.top, 12)
         .onAppear(perform: refresh)

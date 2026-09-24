@@ -24,26 +24,40 @@ struct SearchView: View {
         VStack(alignment: .leading, spacing: 12) {
             searchField
 
-            if results.isEmpty {
-                // Only the "no matches" case gets text — that's feedback about
-                // what just happened, not generic how-to-use instruction. Before
-                // any search, the field's own placeholder already says how to use
-                // this screen, so nothing else here repeats it.
-                EmptyStateView(
-                    systemImage: "magnifyingglass",
-                    instruction: hasSearched
-                        ? "No matches for “\(query)”. Try another word from the file's name, content, or tag."
-                        : nil
-                )
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(results) { node in
-                            SearchResultCard(node: node)
+            // Wrapped in its own `.frame(maxHeight: .infinity)` here, at the call
+            // site — `EmptyStateView` already centers internally, but this VStack
+            // only actually hands it the leftover space below the search field
+            // when something at THIS level explicitly claims it; without this
+            // wrapper the VStack was hugging its natural (compact) height and an
+            // ancestor's `alignment: .top` was top-aligning that whole compact
+            // block instead, leaving a dead gap below rather than truly centering.
+            Group {
+                if results.isEmpty {
+                    // Only the "no matches" case gets text — that's feedback about
+                    // what just happened, not generic how-to-use instruction. Before
+                    // any search, the field's own placeholder already says how to use
+                    // this screen, so nothing else here repeats it.
+                    EmptyStateView(
+                        systemImage: "doc.text.magnifyingglass",
+                        instruction: hasSearched
+                            // Explicit line break, not just a space — relying on
+                            // natural word-wrap here split the sentence at an
+                            // arbitrary word ("Try another word from the" / "file's
+                            // name…") instead of at the sentence boundary.
+                            ? "No matches for “\(query)”.\nTry another word from the file's name, content, or tag."
+                            : nil
+                    )
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(results) { node in
+                                SearchResultCard(node: node)
+                            }
                         }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.top, 12)
     }
@@ -112,6 +126,14 @@ private struct SearchResultCard: View {
     @State private var isExpanded = false
     @State private var isCardHovered = false
 
+    /// The header column's real, measured height WHILE COLLAPSED (filename row +
+    /// up to 2 lines of summary) — captured once via the `GeometryReader`
+    /// background below and only ever updated while `!isExpanded`. The thumbnail
+    /// centers against this cached value instead of the column's live height, so
+    /// expanding the summary (which grows the column) can never move it: the
+    /// value it centers against simply stops changing the moment a card expands.
+    @State private var collapsedContentHeight: CGFloat = 56
+
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -120,15 +142,15 @@ private struct SearchResultCard: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // The header row's height is fixed regardless of `isExpanded` — the
-            // summary here always caps at 2 lines, full-width, so this HStack's
-            // height (and therefore the thumbnail's centered position within it)
-            // never changes when a card expands. The full summary text only
-            // appears again, uncapped, inside `expandedDetails` below.
-            HStack(alignment: .center, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
                 let glyph = FileTypeGlyph.symbol(for: node.filename)
                 FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, maxWidth: 56, maxHeight: 56)
+                    // Centers the thumbnail image within a box the height of the
+                    // CACHED collapsed content, not the actual (possibly taller,
+                    // expanded) row — this is what makes "centered" survive
+                    // expansion instead of just approximating it via `.top`.
+                    .frame(height: collapsedContentHeight, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 0) {
@@ -161,21 +183,38 @@ private struct SearchResultCard: View {
                             .layoutPriority(1)
                     }
 
-                    // Tapping toggles the expanded metadata block below — kept
-                    // deliberately capped at 2 lines here even when expanded (see
-                    // the comment on the outer HStack above).
+                    // Tapping reveals the full summary in place (no separate,
+                    // duplicated copy of it appears in `expandedDetails` below —
+                    // that block is just the divider + metadata now).
                     Text(node.summary)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(ArchivistPalette.secondaryText)
-                        .lineLimit(2)
+                        .lineLimit(isExpanded ? nil : 2)
                         .contentShape(Rectangle())
                         .onTapGesture { isExpanded.toggle() }
                 }
+                // Measures this column's real height while collapsed and caches
+                // it into `collapsedContentHeight` — guarded by `!isExpanded` so
+                // the cache is frozen the instant a card expands, rather than
+                // being overwritten by the taller expanded height.
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear
+                            .onAppear {
+                                if !isExpanded { collapsedContentHeight = geometry.size.height }
+                            }
+                            .onChange(of: geometry.size.height) { newHeight in
+                                if !isExpanded { collapsedContentHeight = newHeight }
+                            }
+                    }
+                )
             }
 
             // Full card width, not indented past the thumbnail — a metadata
             // table describing the whole file, not a continuation of the text
-            // column next to the thumbnail.
+            // column next to the thumbnail. Spacing to it is entirely owned by
+            // `expandedDetails`' own top padding (12px below the summary above),
+            // not this VStack's spacing, which stays 0.
             if isExpanded {
                 expandedDetails
             }
@@ -187,9 +226,15 @@ private struct SearchResultCard: View {
         // `.background` (which would land behind the white fill above and never
         // show) — this is what makes hovering ANYWHERE on the card react, not
         // just the text row, which used its own separate `.hoverHighlight` before.
+        // `allowsHitTesting(false)` is required here: an overlay is otherwise a
+        // real hit-testable layer sitting above everything, including the summary
+        // text's own tap-to-expand gesture below — without this, every tap on the
+        // card (summary text included) was captured by this overlay and fell
+        // through to the outer "reveal in Finder" gesture instead.
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.black.opacity(isCardHovered ? 0.035 : 0))
+                .allowsHitTesting(false)
         )
         .shadow(color: .black.opacity(0.11), radius: 16, x: 0, y: 4)
         .contentShape(Rectangle())
@@ -199,21 +244,20 @@ private struct SearchResultCard: View {
         }
     }
 
-    /// Per skills/metadata-enrichment.md Step 5: the full summary plus
-    /// Location/Created/Last updated — revealed together, below a divider,
-    /// without disturbing the header row's fixed height above.
+    /// Per skills/metadata-enrichment.md Step 5: Location/Created/Last updated,
+    /// below a divider — the full summary itself is already revealed in place
+    /// above (see the header's own summary Text), not duplicated here.
     private var expandedDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Bottom padding here is 4, not 10 — this VStack's own 6pt
+            // `spacing` already adds 6pt between the divider and the first row
+            // below it, so 4 + 6 = 10 total, matching spec. (Using the full 10
+            // here would double-count that 6 and land at 16.)
             Rectangle()
                 .fill(Color(hex: "6E6E73").opacity(0.25))
                 .frame(width: 324, height: 1)
                 .padding(.top, 12)
-                .padding(.bottom, 10)
-
-            Text(node.summary)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(ArchivistPalette.secondaryText)
-                .padding(.bottom, 2)
+                .padding(.bottom, 4)
 
             detailRow("Location", node.path, monospaced: true)
             detailRow("Created", Self.timestampFormatter.string(from: node.createdAt))
@@ -222,7 +266,7 @@ private struct SearchResultCard: View {
     }
 
     private func detailRow(_ label: String, _ value: String, monospaced: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label.uppercased())
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(Color(hex: "A6A6AB").opacity(0.8))
@@ -231,7 +275,12 @@ private struct SearchResultCard: View {
             Text(value)
                 .font(monospaced ? .system(size: 11, design: .monospaced) : .system(size: 11))
                 .foregroundStyle(Color(hex: "8A8A90").opacity(0.9))
-                .lineLimit(monospaced ? 2 : 1)
+                // Single line, always — it's shown truncated with an ellipsis
+                // either way (see `truncationMode` below), and a 2-line cap here
+                // was reserving a second line's worth of height even though the
+                // path only ever rendered on one, part of what was padding out
+                // the space below the metadata block.
+                .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
         }

@@ -133,9 +133,11 @@ enum RelativeDate {
 }
 
 /// Shared empty-state layout for Search, Organize, and Review: an icon plus one
-/// instructional line, positioned slightly above true center rather than
-/// perfectly centered. No example chips — removed by design decision in favor of
-/// a plainer, quieter empty state.
+/// instructional line, centered in whatever space is actually left below the
+/// tab's own header content (search field, instruction field, etc.) — not a
+/// fixed offset from the top, which only happened to look centered when paired
+/// with one particular panel height. No example chips — removed by design
+/// decision in favor of a plainer, quieter empty state.
 struct EmptyStateView: View {
     let systemImage: String
     /// Optional — Search and Organize pass nil here since their field's own
@@ -161,8 +163,7 @@ struct EmptyStateView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
-            .padding(.top, 90)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
     }
 }
