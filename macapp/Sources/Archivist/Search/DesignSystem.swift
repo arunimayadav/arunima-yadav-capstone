@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Shared visual language for the popover — small, reusable pieces so Search,
 /// Review, and Organize read as one consistent system rather than three
@@ -38,6 +39,13 @@ enum ArchivistPalette {
     static let cardBackground = Color(hex: "F0F0F2")
     static let tertiaryText = Color(hex: "8E8E93")
 
+    /// Dark-mode-aware: AppKit's own dynamic system colors, not fixed hex values —
+    /// these are exactly what native macOS card/document surfaces use, so they
+    /// already adapt correctly (near-white in light mode, appropriately dark in
+    /// dark mode) without a hand-maintained light/dark pair.
+    static let cardSurface = Color(nsColor: .controlBackgroundColor)
+    static let pageSurface = Color(nsColor: .textBackgroundColor)
+
     /// Muted tint pairs for TagPill: a pale background with a saturated,
     /// same-hue foreground, rather than one color used at two opacities — matches
     /// the spec's explicit (background, text) pair for the default blue pill.
@@ -59,9 +67,10 @@ struct TagPill: View {
         Text(text)
             .font(.system(size: 11, weight: .medium))
             .lineLimit(1)
+            .fixedSize() // hugs its text — never stretched or compressed by a parent HStack
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(background, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .foregroundStyle(foreground)
     }
 

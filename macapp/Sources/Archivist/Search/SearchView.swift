@@ -116,6 +116,21 @@ private struct SearchResultCard: View {
                         // Finder tag), not the broader classification bucket —
                         // falls back to category only if no topic tag exists.
                         TagPill.forFinderTag(node.tags.first ?? node.category)
+                            .layoutPriority(1) // never truncated/compressed — filename gives way first
+
+                        // Flexible, not a fixed trailing padding guess: the gap
+                        // between the pill and the date always fills whatever
+                        // space is left, so a short filename+tag doesn't crowd
+                        // the date and a long one doesn't overlap it either —
+                        // the visual distance from the pill to the date is
+                        // "whatever's left of the row", never a hardcoded number.
+                        Spacer(minLength: 8)
+
+                        Text(RelativeDate.string(from: node.createdAt))
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(ArchivistPalette.tertiaryText)
+                            .lineLimit(1)
+                            .layoutPriority(1)
                     }
                     .contentShape(Rectangle())
                     .onTapGesture(perform: onOpen)
@@ -127,23 +142,13 @@ private struct SearchResultCard: View {
                         .contentShape(Rectangle())
                         .onTapGesture { isSummaryExpanded.toggle() }
                 }
-                // Reserves room so text never runs under the date, which is laid
-                // out separately as an absolutely-positioned overlay in the card's
-                // corner rather than as a sibling in this row.
-                .padding(.trailing, 32)
             }
             .hoverHighlight(cornerRadius: 8)
         }
         .padding(12)
-        .frame(minHeight: 64, alignment: .topLeading)
-        .background(ArchivistPalette.cardBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(alignment: .topTrailing) {
-            Text(RelativeDate.string(from: node.createdAt))
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(ArchivistPalette.tertiaryText)
-                .padding(.top, 12)
-                .padding(.trailing, 12)
-        }
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading) // matches the search bar's width exactly
+        .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
     }
 }
 
