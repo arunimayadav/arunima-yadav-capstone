@@ -5,7 +5,7 @@ import AppKit
 /// match ranked best-first, each with what it's connected to (same_tag/
 /// same_category/similar_content) — plan.md section 5/6.
 struct SearchView: View {
-    let store: GraphStore
+    @ObservedObject var environment: AppEnvironment
     @State private var query: String = ""
     @State private var results: [Node] = []
     @State private var hasSearched = false
@@ -60,6 +60,19 @@ struct SearchView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.top, 12)
+        .onAppear(perform: applyPendingSearchIfNeeded)
+        .onChange(of: environment.pendingSearchQuery) { _ in applyPendingSearchIfNeeded() }
+    }
+
+    /// Review's confirmation banner sets `environment.pendingSearchQuery` and
+    /// switches to this tab so the just-resolved file's own card shows up
+    /// immediately — a one-shot handoff, cleared right after being applied so it
+    /// doesn't re-fire on every subsequent visit to this tab.
+    private func applyPendingSearchIfNeeded() {
+        guard let pending = environment.pendingSearchQuery else { return }
+        query = pending
+        runSearch()
+        environment.pendingSearchQuery = nil
     }
 
     /// A native-feeling, "inset" search field — matching macOS's system search
@@ -105,7 +118,7 @@ struct SearchView: View {
     }
 
     private func runSearch() {
-        results = store.search(query: query, limit: Self.resultLimit)
+        results = environment.store.search(query: query, limit: Self.resultLimit)
         hasSearched = !query.isEmpty
     }
 }

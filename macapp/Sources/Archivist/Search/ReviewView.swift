@@ -8,10 +8,17 @@ import AppKit
 /// own, the user has to open the Review tab and act on each card themselves —
 /// the watcher/Pipeline never calls into ReviewActions.
 struct ReviewView: View {
-    let store: GraphStore
-    let settings: SettingsStore
+    @ObservedObject var environment: AppEnvironment
     @State private var items: [Node] = []
     @State private var lastOutcome: String?
+    /// The resulting (possibly renamed) filename to jump to in Search when the
+    /// confirmation banner is tapped — nil for Reject, since a rejected file
+    /// stays out of the review queue but isn't something this banner should
+    /// invite you to go "view," and searching for it isn't the point of Reject.
+    @State private var lastResolvedFilename: String?
+
+    private var store: GraphStore { environment.store }
+    private var settings: SettingsStore { environment.settings }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -20,22 +27,30 @@ struct ReviewView: View {
             // state kept on the card itself would vanish before it could be seen.
             // This is the same gap Organize already had fixed for its own actions.
             if let lastOutcome {
-                HStack(spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     Text(lastOutcome)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(ArchivistPalette.secondaryText)
+                        .multilineTextAlignment(.center)
                 }
                 .padding(12)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard let lastResolvedFilename else { return }
+                    environment.pendingSearchQuery = lastResolvedFilename
+                    environment.selectedTab = .search
+                }
             }
 
             Group {
                 if items.isEmpty {
                     EmptyStateView(
                         systemImage: "checkmark.circle",
-                        instruction: "Nothing needs review — low-confidence files will show up here."
+                        instruction: "Nothing needs your review right now."
                     )
                 } else {
                     ScrollView {
@@ -53,8 +68,9 @@ struct ReviewView: View {
         .onAppear(perform: refresh)
     }
 
-    private func resolved(_ message: String) {
+    private func resolved(_ message: String, searchableFilename: String?) {
         lastOutcome = message
+        lastResolvedFilename = searchableFilename
         refresh()
     }
 
@@ -71,16 +87,19 @@ private struct ReviewCard: View {
     let store: GraphStore
     let settings: SettingsStore
     /// A human-readable summary of what just happened ("Accepted...", "Saved
-    /// changes to...", "Rejected..."), for the parent's confirmation banner.
-    let onResolved: (String) -> Void
+    /// changes to...", "Rejected..."), plus the resulting filename to search for
+    /// if the banner is tapped (nil for Reject — see `ReviewView`), for the
+    /// parent's confirmation banner.
+    let onResolved: (String, String?) -> Void
 
     @State private var isEditing = false
     @State private var isRevealHovered = false
+    @State private var isReasoningExpanded = false
     @State private var category: FixedCategory
     @State private var docTypeText: String
     @State private var titleText: String
 
-    init(node: Node, store: GraphStore, settings: SettingsStore, onResolved: @escaping (String) -> Void) {
+    init(node: Node, store: GraphStore, settings: SettingsStore, onResolved: @escaping (String, String?) -> Void) {
         self.node = node
         self.store = store
         self.settings = settings
@@ -94,54 +113,78 @@ private struct ReviewCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // spacing: 0 throughout — every gap below is an explicit `.padding(.top,
+        // …)` on the element that follows it instead, so nothing here can
+        // silently double-count with a VStack `spacing` the way an earlier pass
+        // on Search's cards did (a divider's own bottom padding plus the
+        // VStack's spacing both adding up).
+        VStack(alignment: .leading, spacing: 0) {
             header
 
+            Rectangle()
+                .fill(Color(hex: "6E6E73").opacity(0.25))
+                .frame(height: 1)
+                .padding(.top, 12)
+
             Text(node.summary)
-                .font(ArchivistType.body)
-                .foregroundStyle(.secondary)
-                .lineLimit(isEditing ? nil : 2)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(ArchivistPalette.secondaryText)
+                .lineLimit(2)
+                .padding(.top, 10)
 
             if !node.reasoning.isEmpty {
+                // Collapsed to a single line by default — tapping expands it in
+                // place, same "tap the secondary text to reveal the rest of it"
+                // pattern Search's own summary uses.
                 Text("Why it needs review: \(node.reasoning)")
-                    .font(ArchivistType.caption)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(3)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(ArchivistPalette.tertiaryText)
+                    .lineLimit(isReasoningExpanded ? nil : 1)
+                    .contentShape(Rectangle())
+                    .onTapGesture { isReasoningExpanded.toggle() }
+                    .padding(.top, 7)
             }
 
             if isEditing {
                 editFields
+                    .padding(.top, 8)
             }
 
             actions
+                .padding(.top, 8)
         }
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
-        )
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.11), radius: 16, x: 0, y: 4)
     }
 
     /// No category/ownership/docType pills here anymore — the reviewer is about
     /// to choose the tag themselves (see the category picker below), so showing
     /// the model's own guess as a set of pills right above that choice was
     /// confusing rather than informative.
+    ///
+    /// Styled to match Search's result cards (thumbnail size, font sizes/colors,
+    /// spacing) rather than its own separate look. `.center` alignment here is
+    /// safe/stable (unlike Search's cards) since nothing in this specific HStack
+    /// ever changes height — editing and reasoning-expansion both live in
+    /// separate rows below it, not inside it — so the thumbnail genuinely stays
+    /// centered against the filename + Reveal in Finder block always.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
             let glyph = FileTypeGlyph.symbol(for: node.filename)
-            FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, maxWidth: 36, maxHeight: 36)
+            FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, maxWidth: 56, maxHeight: 56)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(node.filename)
-                    .font(ArchivistType.title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(ArchivistPalette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
                 } label: {
                     Text("Reveal in Finder")
-                        .font(ArchivistType.caption.weight(.medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.accentColor.opacity(isRevealHovered ? 0.75 : 1))
                         .underline(isRevealHovered)
                 }
@@ -150,10 +193,6 @@ private struct ReviewCard: View {
             }
 
             Spacer(minLength: 4)
-
-            Text("\(Int(node.confidence * 100))%")
-                .font(ArchivistType.caption)
-                .foregroundStyle(.tertiary)
         }
     }
 
@@ -163,7 +202,6 @@ private struct ReviewCard: View {
             labeledField("Doc type", text: $docTypeText)
             labeledField("Title", text: $titleText)
         }
-        .padding(.top, 2)
     }
 
     /// One of exactly five fixed values (skills/tagging.md) — a picker, not a
@@ -223,24 +261,27 @@ private struct ReviewCard: View {
                     .tint(.red)
             }
         }
-        .padding(.top, 2)
     }
 
     // MARK: - Actions (skills/review.md Step 3/4, via ReviewActions)
 
     private func accept() {
-        ReviewActions.accept(node: node, store: store, settings: settings)
-        onResolved("Accepted “\(node.filename)”.")
+        // Uses the RESULTING node's filename, not `node.filename` — File Action
+        // (inside `resolve`) can rename the file as part of accepting it, so the
+        // name the confirmation banner should search for is whatever it ended up
+        // as on disk, not what it was called before acceptance.
+        let result = ReviewActions.accept(node: node, store: store, settings: settings)
+        onResolved("Accepted “\(node.filename)”.", result?.filename)
     }
 
     private func saveEdit() {
-        ReviewActions.edit(node: node, category: category.rawValue, docType: docTypeText, title: titleText,
-                            tags: [category.rawValue], store: store, settings: settings)
-        onResolved("Saved changes to “\(node.filename)”.")
+        let result = ReviewActions.edit(node: node, category: category.rawValue, docType: docTypeText, title: titleText,
+                                         tags: [category.rawValue], store: store, settings: settings)
+        onResolved("Saved changes to “\(node.filename)”.", result?.filename)
     }
 
     private func reject() {
         ReviewActions.reject(node: node, store: store)
-        onResolved("Rejected “\(node.filename)”.")
+        onResolved("Rejected “\(node.filename)”.", nil)
     }
 }

@@ -25,6 +25,12 @@ final class AppEnvironment: ObservableObject {
     /// a refresh callback through every mutation site.
     @Published var pendingReviewCount: Int = 0
 
+    /// Set by Review's confirmation banner (tapping "Accepted/Saved changes to X")
+    /// to jump to Search and immediately show that file's card there. SearchView
+    /// consumes and clears this on appear/change; it's a one-shot handoff, not
+    /// persistent state, which is why it isn't just `selectedTab` reused for both.
+    @Published var pendingSearchQuery: String?
+
     static let supportDirectory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = base.appendingPathComponent("Archivist", isDirectory: true)

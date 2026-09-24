@@ -43,11 +43,11 @@ struct ContentView: View {
             Group {
                 switch environment.selectedTab {
                 case .search:
-                    SearchView(store: environment.store)
+                    SearchView(environment: environment)
                 case .command:
                     CommandView(interpreter: environment.commandInterpreter)
                 case .review:
-                    ReviewView(store: environment.store, settings: environment.settings)
+                    ReviewView(environment: environment)
                 case .settings:
                     SettingsView(settings: environment.settings)
                 }
