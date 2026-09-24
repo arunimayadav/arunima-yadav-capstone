@@ -1,16 +1,24 @@
 import SwiftUI
 import AppKit
 
-/// Graph-based search: query the GraphStore, show the single closest match plus
-/// what it's connected to (same_tag/same_category/similar_content) — plan.md
-/// section 5/6. Shows only one result (the closest), not a ranked list.
+/// Graph-based search: query the GraphStore, show every sufficiently-relevant
+/// match ranked best-first, each with what it's connected to (same_tag/
+/// same_category/similar_content) — plan.md section 5/6.
 struct SearchView: View {
     let store: GraphStore
     @State private var query: String = ""
     @State private var results: [Node] = []
     @State private var hasSearched = false
-    @State private var showRelated = false
     @State private var isClearHovered = false
+
+    /// Capped, not unlimited — `GraphStore.search` already requires a minimum
+    /// relevance score (see its `minimumScore` guard) before a node counts as a
+    /// match at all, so this is purely "how many of the genuinely relevant hits
+    /// to show," not a substitute for that relevance filter. Was hardcoded to 1,
+    /// which is why a query matching two files (e.g. two "Academic…" files for
+    /// "aca") only ever rendered one card — this raises it enough to show real
+    /// matches without turning the tab into an unbounded list.
+    private static let resultLimit = 8
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,17 +37,9 @@ struct SearchView: View {
                 )
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(results) { node in
                             SearchResultCard(node: node)
-                            // "Show related" lives below the card, not inside its
-                            // background/padding — a separate, secondary action,
-                            // not part of the card itself.
-                            RelatedFilesSection(
-                                isExpanded: showRelated,
-                                related: showRelated ? store.connectedNodes(to: node.id) : [],
-                                onToggle: { showRelated.toggle() }
-                            )
                         }
                     }
                 }
@@ -91,9 +91,8 @@ struct SearchView: View {
     }
 
     private func runSearch() {
-        results = store.search(query: query, limit: 1)
+        results = store.search(query: query, limit: Self.resultLimit)
         hasSearched = !query.isEmpty
-        showRelated = false
     }
 }
 
@@ -111,6 +110,7 @@ private struct SearchResultCard: View {
     let node: Node
 
     @State private var isExpanded = false
+    @State private var isCardHovered = false
 
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -121,17 +121,25 @@ private struct SearchResultCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
+            // The header row's height is fixed regardless of `isExpanded` — the
+            // summary here always caps at 2 lines, full-width, so this HStack's
+            // height (and therefore the thumbnail's centered position within it)
+            // never changes when a card expands. The full summary text only
+            // appears again, uncapped, inside `expandedDetails` below.
+            HStack(alignment: .center, spacing: 12) {
                 let glyph = FileTypeGlyph.symbol(for: node.filename)
                 FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, maxWidth: 56, maxHeight: 56)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 0) {
                         Text(node.filename)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.black)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(ArchivistPalette.primaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
+
+                        Spacer().frame(width: 8)
+
                         // The tag actually assigned to the file (same as its
                         // Finder tag), not the broader classification bucket —
                         // falls back to category only if no topic tag exists.
@@ -153,103 +161,79 @@ private struct SearchResultCard: View {
                             .layoutPriority(1)
                     }
 
-                    // Its own tap target (toggle expand) nested inside the
-                    // card's tap target (reveal in Finder) — SwiftUI resolves
-                    // a tap here to this gesture rather than the outer one, so
-                    // the two actions never fight over the same tap.
+                    // Tapping toggles the expanded metadata block below — kept
+                    // deliberately capped at 2 lines here even when expanded (see
+                    // the comment on the outer HStack above).
                     Text(node.summary)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(ArchivistPalette.secondaryText)
-                        .lineLimit(isExpanded ? nil : 2)
+                        .lineLimit(2)
                         .contentShape(Rectangle())
                         .onTapGesture { isExpanded.toggle() }
-
-                    if isExpanded {
-                        expandedDetails
-                    }
                 }
             }
-            .hoverHighlight(cornerRadius: 8)
+
+            // Full card width, not indented past the thumbnail — a metadata
+            // table describing the whole file, not a continuation of the text
+            // column next to the thumbnail.
+            if isExpanded {
+                expandedDetails
+            }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading) // matches the search bar's width exactly
-        .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // The hover tint sits in an overlay (drawn on top), not another
+        // `.background` (which would land behind the white fill above and never
+        // show) — this is what makes hovering ANYWHERE on the card react, not
+        // just the text row, which used its own separate `.hoverHighlight` before.
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(isCardHovered ? 0.035 : 0))
+        )
+        .shadow(color: .black.opacity(0.11), radius: 16, x: 0, y: 4)
         .contentShape(Rectangle())
+        .onHover { isCardHovered = $0 }
         .onTapGesture {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
         }
     }
 
+    /// Per skills/metadata-enrichment.md Step 5: the full summary plus
+    /// Location/Created/Last updated — revealed together, below a divider,
+    /// without disturbing the header row's fixed height above.
     private var expandedDetails: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Divider()
+            Rectangle()
+                .fill(Color(hex: "6E6E73").opacity(0.25))
+                .frame(width: 324, height: 1)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+
+            Text(node.summary)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(ArchivistPalette.secondaryText)
+                .padding(.bottom, 2)
 
             detailRow("Location", node.path, monospaced: true)
             detailRow("Created", Self.timestampFormatter.string(from: node.createdAt))
             detailRow("Last updated", Self.timestampFormatter.string(from: node.updatedAt))
         }
-        .padding(.top, 2)
     }
 
     private func detailRow(_ label: String, _ value: String, monospaced: Bool = false) -> some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .tracking(0.3)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Color(hex: "A6A6AB").opacity(0.8))
+                .tracking(0.5)
                 .frame(width: 76, alignment: .leading)
             Text(value)
                 .font(monospaced ? .system(size: 11, design: .monospaced) : .system(size: 11))
-                .foregroundStyle(ArchivistPalette.secondaryText)
+                .foregroundStyle(Color(hex: "8A8A90").opacity(0.9))
                 .lineLimit(monospaced ? 2 : 1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
         }
-    }
-}
-
-/// "Show related" and the connected-files list, rendered below the card rather
-/// than inside its background/padding — a secondary, optional action, not part
-/// of the card itself.
-private struct RelatedFilesSection: View {
-    let isExpanded: Bool
-    let related: [Node]
-    let onToggle: () -> Void
-
-    @State private var isLinkHovered = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button(action: onToggle) {
-                Text(isExpanded ? "Hide related" : "Show related")
-                    .font(ArchivistType.caption.weight(.medium))
-                    .foregroundStyle(Color.accentColor.opacity(isLinkHovered ? 0.75 : 1))
-                    .underline(isLinkHovered)
-            }
-            .buttonStyle(.plain)
-            .onHover { isLinkHovered = $0 }
-            .padding(.horizontal, 4)
-
-            if isExpanded {
-                if related.isEmpty {
-                    Text("No related files yet.")
-                        .font(ArchivistType.caption)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 4)
-                } else {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(related.prefix(4)) { r in
-                            Text(r.filename)
-                                .font(ArchivistType.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                }
-            }
-        }
-        .padding(.bottom, 4)
     }
 }

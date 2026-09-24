@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ArunimaYadav_Capstone}/macapp",
+            "name": "Debug Archivist (macapp)",
+            "target": "Archivist",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Archivist (macapp)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ArunimaYadav_Capstone}/macapp",
+            "name": "Release Archivist (macapp)",
+            "target": "Archivist",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Archivist (macapp)"
+        }
+    ]
+}

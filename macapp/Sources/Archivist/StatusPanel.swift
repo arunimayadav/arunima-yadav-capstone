@@ -41,12 +41,14 @@ final class StatusPanel: NSPanel {
         container.layer?.shadowOffset = CGSize(width: 0, height: -6) // AppKit layers are y-up; negative moves the shadow down
 
         let effectView = NSVisualEffectView()
-        // `.underWindowBackground` reads noticeably more see-through than
-        // `.popover`/`.menu` in light mode (confirmed by comparison against a
-        // real Control Center dropdown) — `.popover` alone rendered as a fairly
-        // opaque flat card with little real blur-through of whatever is behind
-        // the panel, which is the "not clear enough" glass this replaces.
-        effectView.material = .underWindowBackground
+        // `.underWindowBackground` was tried here first but is documented for
+        // blurring content *within* the same window (e.g. behind a toolbar) —
+        // used with `.behindWindow` blending on a standalone floating panel it
+        // rendered as a flat, fully opaque fill, which is worse than the
+        // starting point. `.menu` is what NSMenu itself uses for exactly this
+        // "floats over the desktop with real blur-through" case, and is the
+        // closest public material to genuine Control-Center-style glass.
+        effectView.material = .menu
         effectView.blendingMode = .behindWindow
         // `.active` rather than `.followsWindowActiveState` — a status-bar
         // dropdown isn't a real window the user thinks of as "active/inactive",
