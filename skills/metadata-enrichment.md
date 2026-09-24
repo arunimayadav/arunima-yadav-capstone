@@ -42,7 +42,7 @@ tags and category can change on re-enrichment (a file can be reclassified), when
 path is kept current, if a file is moved by a later action (review approval, natural-language command), that update is this skill's job too, not a separate one, the node's path must always reflect where the file actually is.
 
 Step 5: Surfacing the record in the UI
-The complete record is still assembled and written in full on every call, per Steps 1-4, regardless of what the UI happens to show, this step only concerns what a user sees when they tap a search result card.
-Tapping a card expands it in place to show path (as "Location"), created_at, and updated_at ("Last updated") plus a Reveal in Finder action, that's the whole expanded view.
+The complete record is still assembled and written in full on every call, per Steps 1-4, regardless of what the UI happens to show, this step only concerns what a user sees when they interact with a search result card.
+Tapping the card itself reveals the file in Finder, that's the primary action for a search result. Tapping the summary text specifically instead expands the card in place to show the full summary plus path (as "Location"), created_at, and updated_at ("Last updated"), that's the whole expanded view.
 category/tag is not repeated in the expanded view, it's already shown on the collapsed card.
 status, confidence, doc_type, and ownership are not shown in the expanded view, a user reviewing search results has no use for them, they stay computed and stored on the node exactly as Steps 2-4 describe, they're just not display fields here.

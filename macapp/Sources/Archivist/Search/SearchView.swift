@@ -89,17 +89,18 @@ struct SearchView: View {
 
 /// A single search result: a real thumbnail of the file's first page/content
 /// (not just a type glyph), filename + the tag actually assigned to it, a short
-/// description, and the date tucked in the card's corner. Tapping anywhere on
-/// the card expands it in place (skills/metadata-enrichment.md) to reveal the
-/// file's location and timestamps, plus Reveal in Finder — the rest of that
-/// skill's record (status, confidence, doc type, ownership) is still computed
-/// and stored on the node as always, it's just not surfaced here since it
-/// isn't useful to a user, and the tag/category is already visible up top.
+/// description, and the date tucked in the card's corner. Two distinct tap
+/// targets, not one: tapping the card itself reveals the file in Finder —
+/// the fast, common action — while tapping the summary text specifically
+/// expands it in place (skills/metadata-enrichment.md) to show the full
+/// summary plus location and timestamps. The rest of that skill's record
+/// (status, confidence, doc type, ownership) is still computed and stored on
+/// the node as always, it's just not surfaced here since it isn't useful to a
+/// user, and the tag/category is already visible up top.
 private struct SearchResultCard: View {
     let node: Node
 
     @State private var isExpanded = false
-    @State private var isRevealHovered = false
 
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -142,10 +143,16 @@ private struct SearchResultCard: View {
                             .layoutPriority(1)
                     }
 
+                    // Its own tap target (toggle expand) nested inside the
+                    // card's tap target (reveal in Finder) — SwiftUI resolves
+                    // a tap here to this gesture rather than the outer one, so
+                    // the two actions never fight over the same tap.
                     Text(node.summary)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(ArchivistPalette.secondaryText)
                         .lineLimit(isExpanded ? nil : 2)
+                        .contentShape(Rectangle())
+                        .onTapGesture { isExpanded.toggle() }
 
                     if isExpanded {
                         expandedDetails
@@ -159,7 +166,9 @@ private struct SearchResultCard: View {
         .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
         .contentShape(Rectangle())
-        .onTapGesture { isExpanded.toggle() }
+        .onTapGesture {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
+        }
     }
 
     private var expandedDetails: some View {
@@ -169,17 +178,6 @@ private struct SearchResultCard: View {
             detailRow("Location", node.path, monospaced: true)
             detailRow("Created", Self.timestampFormatter.string(from: node.createdAt))
             detailRow("Last updated", Self.timestampFormatter.string(from: node.updatedAt))
-
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
-            } label: {
-                Text("Reveal in Finder")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.accentColor.opacity(isRevealHovered ? 0.75 : 1))
-                    .underline(isRevealHovered)
-            }
-            .buttonStyle(.plain)
-            .onHover { isRevealHovered = $0 }
         }
         .padding(.top, 2)
     }
