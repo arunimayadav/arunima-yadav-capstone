@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// "create a folder for anything related to my bank and put those files in it" —
 /// always proposes the matched files and destination before moving anything;
@@ -10,6 +11,13 @@ struct CommandView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var moveOutcome: MoveOutcome?
+    @State private var isClearHovered = false
+    @State private var loadingPhraseIndex = 0
+
+    /// Rotated through while `isLoading` is true (see `loadingView`'s `.task`) —
+    /// a single static "Thinking…" gave no sense that anything was actually
+    /// happening during what can be a 30s-150s+ local-model call.
+    private static let loadingPhrases = ["Reading your files…", "Matching your instruction…", "Almost done…"]
 
     /// What to tell the user after Confirm and Move (or Undo) actually finishes —
     /// clicking the button previously gave no feedback at all once the move
@@ -24,45 +32,72 @@ struct CommandView: View {
         VStack(alignment: .leading, spacing: 12) {
             instructionField
 
-            if isLoading {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Thinking…").font(ArchivistType.caption).foregroundStyle(.secondary)
+            // A single Group so only the branch that actually renders
+            // (`loadingView` uniquely opts into `maxHeight: .infinity` +
+            // center alignment internally) affects layout — proposal/outcome/
+            // error/empty all stay naturally top-anchored right below the
+            // search field, which is what "12px below search bar" requires.
+            Group {
+                if isLoading {
+                    loadingView
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .font(ArchivistType.body)
+                        .foregroundStyle(.red)
+                } else if let proposal {
+                    proposalView(proposal)
+                } else if let moveOutcome {
+                    moveOutcomeView(moveOutcome)
+                } else if instruction.isEmpty {
+                    // No instructional text here — the field's own placeholder
+                    // already shows an example of how to use this screen.
+                    EmptyStateView(systemImage: "wand.and.stars")
                 }
             }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(ArchivistType.body)
-                    .foregroundStyle(.red)
-            }
-
-            if let proposal {
-                proposalView(proposal)
-            } else if let moveOutcome {
-                moveOutcomeView(moveOutcome)
-            } else if !isLoading && errorMessage == nil && instruction.isEmpty {
-                // No instructional text here — the field's own placeholder already
-                // shows an example of how to use this screen.
-                EmptyStateView(systemImage: "wand.and.stars")
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .padding(.top, 12)
     }
 
+    /// Centered in whatever space is left below the search field — both axes,
+    /// not just pinned under the field the way the old inline "Thinking…" row
+    /// was.
+    private var loadingView: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+            Text(Self.loadingPhrases[loadingPhraseIndex])
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(ArchivistPalette.secondaryText)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .task(id: isLoading) {
+            guard isLoading else { return }
+            var index = 0
+            while !Task.isCancelled {
+                loadingPhraseIndex = index % Self.loadingPhrases.count
+                index += 1
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+            }
+        }
+    }
+
     /// Feedback after a move (or its undo) — folder name and location spelled out
-    /// explicitly, plus a one-tap Undo while the outcome is still "moved".
+    /// explicitly, plus a one-tap Undo while the outcome is still "moved". Same
+    /// width as the search field (348pt, via `.frame(maxWidth: .infinity)`) so it
+    /// never just hugs its own (shorter) text width instead.
     @ViewBuilder
     private func moveOutcomeView(_ outcome: MoveOutcome) -> some View {
         switch outcome {
         case .moved(let folderName, let locationName, let count, let records):
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     Text("Moved \(count) file\(count == 1 ? "" : "s") to “\(folderName)” in \(locationName).")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(ArchivistPalette.secondaryText)
+                        .multilineTextAlignment(.center)
                 }
                 Button("Undo") {
                     interpreter.undo(records)
@@ -72,73 +107,109 @@ struct CommandView: View {
                 .controlSize(.small)
             }
             .padding(12)
+            .frame(maxWidth: .infinity, alignment: .center)
             .background(ArchivistPalette.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                // The folder itself, not one of its files — derived from any
+                // record's destination path rather than stored separately,
+                // since every record in this batch shares the same parent.
+                if let first = records.first {
+                    let folder = URL(fileURLWithPath: first.dstPath).deletingLastPathComponent()
+                    NSWorkspace.shared.open(folder)
+                }
+            }
 
         case .undone(let folderName, let locationName):
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "arrow.uturn.backward.circle.fill")
                     .foregroundStyle(.secondary)
                 Text("Undone — files moved back from “\(folderName)” in \(locationName).")
                     .font(.system(size: 12, weight: .regular))
+                    .multilineTextAlignment(.center)
                     .foregroundStyle(ArchivistPalette.secondaryText)
             }
             .padding(12)
+            .frame(maxWidth: .infinity, alignment: .center)
             .background(ArchivistPalette.cardBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
+    /// Matches Search's search field exactly (color, corner radius, border,
+    /// shadow, icon size/opacity, text color, clear button) so the two screens
+    /// read as one consistent design system rather than two different ones.
     private var instructionField: some View {
         HStack(spacing: 8) {
             Image(systemName: "wand.and.stars")
-                .font(.system(size: 14))
-                .foregroundStyle(ArchivistPalette.placeholderText)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(ArchivistPalette.secondaryText.opacity(0.88))
             TextField("", text: $instruction,
                       prompt: Text("e.g. put my finance files in a folder").foregroundColor(ArchivistPalette.placeholderText))
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
+                .foregroundColor(ArchivistPalette.primaryText)
                 .onSubmit(propose)
+            if !instruction.isEmpty {
+                Button {
+                    instruction = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(StatefulIconButtonStyle(
+                    isHovered: isClearHovered,
+                    hitSize: 28,
+                    normalColor: ArchivistPalette.placeholderText,
+                    hoverColor: ArchivistPalette.secondaryText,
+                    pressedColor: Color(hex: "4A4A4D")
+                ))
+                .onHover { isClearHovered = $0 }
+            }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 36)
-        .background(ArchivistPalette.searchFieldBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.leading, 10)
+        .padding(.trailing, instruction.isEmpty ? 10 : 8)
+        .frame(height: 32)
+        .background(ArchivistPalette.searchFieldBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 0.75)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
     }
 
     private func proposalView(_ proposal: ProposedAction) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Create “\(proposal.destinationFolderName)” and move:")
+        // A row is ~37pt (32pt content + 4pt spacing + a hair of rounding) — so a
+        // short match list only takes as much height as it actually needs
+        // instead of a fixed-160 ScrollView always reserving that much room and
+        // leaving a dead gap between the files and the buttons below.
+        let rowHeight: CGFloat = 37
+        let listHeight = min(CGFloat(proposal.matchedNodes.count) * rowHeight, 160)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("I'll create “\(proposal.destinationFolderName)” and move these files:")
                 .font(ArchivistType.title)
 
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(proposal.matchedNodes) { node in
-                        HStack(spacing: 8) {
-                            let glyph = FileTypeGlyph.symbol(for: node.filename)
-                            Image(systemName: glyph.name)
-                                .font(.system(size: 11))
-                                .foregroundStyle(glyph.tint)
-                            Text(node.filename)
-                                .font(ArchivistType.body)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
+                        ProposedFileRow(node: node) {
+                            self.proposal?.matchedNodes.removeAll { $0.id == node.id }
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .hoverHighlight(cornerRadius: 6)
                     }
                 }
             }
-            .frame(maxHeight: 160)
+            .frame(height: listHeight)
 
             HStack(spacing: 8) {
                 Button("Confirm and Move") { execute(proposal) }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .disabled(proposal.matchedNodes.isEmpty)
                 Button("Cancel") { self.proposal = nil }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -170,5 +241,45 @@ struct CommandView: View {
         } catch {
             errorMessage = "Move failed: \(error)"
         }
+    }
+}
+
+/// One matched file in the proposal list, with its own trailing remove button —
+/// styled identically to the search field's clear button (same component, same
+/// hit target/states) so a user can exclude a file before confirming the move.
+private struct ProposedFileRow: View {
+    let node: Node
+    let onRemove: () -> Void
+
+    @State private var isRemoveHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            let glyph = FileTypeGlyph.symbol(for: node.filename)
+            Image(systemName: glyph.name)
+                .font(.system(size: 11))
+                .foregroundStyle(glyph.tint)
+            Text(node.filename)
+                .font(ArchivistType.body)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+            }
+            .buttonStyle(StatefulIconButtonStyle(
+                isHovered: isRemoveHovered,
+                hitSize: 22,
+                normalColor: ArchivistPalette.placeholderText,
+                hoverColor: ArchivistPalette.secondaryText,
+                pressedColor: Color(hex: "4A4A4D")
+            ))
+            .onHover { isRemoveHovered = $0 }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .hoverHighlight(cornerRadius: 6)
     }
 }
