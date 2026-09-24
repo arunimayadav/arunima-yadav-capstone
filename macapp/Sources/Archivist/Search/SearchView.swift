@@ -60,19 +60,26 @@ struct SearchView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.top, 12)
-        .onAppear(perform: applyPendingSearchIfNeeded)
-        .onChange(of: environment.pendingSearchQuery) { _ in applyPendingSearchIfNeeded() }
+        .onAppear(perform: applyPendingReviewedNodeIfNeeded)
+        .onChange(of: environment.pendingReviewedNodeID) { _ in applyPendingReviewedNodeIfNeeded() }
     }
 
-    /// Review's confirmation banner sets `environment.pendingSearchQuery` and
+    /// Review's confirmation banner sets `environment.pendingReviewedNodeID` and
     /// switches to this tab so the just-resolved file's own card shows up
     /// immediately — a one-shot handoff, cleared right after being applied so it
-    /// doesn't re-fire on every subsequent visit to this tab.
-    private func applyPendingSearchIfNeeded() {
-        guard let pending = environment.pendingSearchQuery else { return }
-        query = pending
-        runSearch()
-        environment.pendingSearchQuery = nil
+    /// doesn't re-fire on every subsequent visit to this tab. Looks the node up
+    /// directly by ID and shows exactly that one result, rather than routing it
+    /// through the normal fuzzy `search(query:)` — searching by the raw filename
+    /// (which was the earlier approach) let a generic token like "pdf" match
+    /// every other PDF in the graph too.
+    private func applyPendingReviewedNodeIfNeeded() {
+        guard let nodeID = environment.pendingReviewedNodeID else { return }
+        if let node = environment.store.node(id: nodeID) {
+            query = node.filename
+            results = [node]
+            hasSearched = true
+        }
+        environment.pendingReviewedNodeID = nil
     }
 
     /// A native-feeling, "inset" search field — matching macOS's system search
@@ -168,7 +175,7 @@ private struct SearchResultCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 0) {
                         Text(node.filename)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(ArchivistPalette.primaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)

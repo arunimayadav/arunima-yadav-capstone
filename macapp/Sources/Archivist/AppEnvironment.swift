@@ -26,10 +26,15 @@ final class AppEnvironment: ObservableObject {
     @Published var pendingReviewCount: Int = 0
 
     /// Set by Review's confirmation banner (tapping "Accepted/Saved changes to X")
-    /// to jump to Search and immediately show that file's card there. SearchView
-    /// consumes and clears this on appear/change; it's a one-shot handoff, not
-    /// persistent state, which is why it isn't just `selectedTab` reused for both.
-    @Published var pendingSearchQuery: String?
+    /// to jump to Search and immediately show ONLY that file's card there.
+    /// SearchView consumes and clears this on appear/change; it's a one-shot
+    /// handoff, not persistent state, which is why it isn't just `selectedTab`
+    /// reused for both. A node ID, not a filename string — searching by the raw
+    /// filename text was the earlier approach, but a generic term like "pdf"
+    /// (present in almost every filename) matched every other PDF in the graph
+    /// too. Looking the node up directly by ID and showing exactly that one
+    /// result is the only way to guarantee "just the file that was reviewed."
+    @Published var pendingReviewedNodeID: Int64?
 
     static let supportDirectory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!

@@ -11,11 +11,11 @@ struct ReviewView: View {
     @ObservedObject var environment: AppEnvironment
     @State private var items: [Node] = []
     @State private var lastOutcome: String?
-    /// The resulting (possibly renamed) filename to jump to in Search when the
-    /// confirmation banner is tapped — nil for Reject, since a rejected file
-    /// stays out of the review queue but isn't something this banner should
-    /// invite you to go "view," and searching for it isn't the point of Reject.
-    @State private var lastResolvedFilename: String?
+    /// The resulting node's ID to jump to in Search when the confirmation banner
+    /// is tapped — nil for Reject, since a rejected file stays out of the review
+    /// queue but isn't something this banner should invite you to go "view," and
+    /// searching for it isn't the point of Reject.
+    @State private var lastResolvedNodeID: Int64?
 
     private var store: GraphStore { environment.store }
     private var settings: SettingsStore { environment.settings }
@@ -40,8 +40,8 @@ struct ReviewView: View {
                 .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    guard let lastResolvedFilename else { return }
-                    environment.pendingSearchQuery = lastResolvedFilename
+                    guard let lastResolvedNodeID else { return }
+                    environment.pendingReviewedNodeID = lastResolvedNodeID
                     environment.selectedTab = .search
                 }
             }
@@ -68,9 +68,9 @@ struct ReviewView: View {
         .onAppear(perform: refresh)
     }
 
-    private func resolved(_ message: String, searchableFilename: String?) {
+    private func resolved(_ message: String, searchableNodeID: Int64?) {
         lastOutcome = message
-        lastResolvedFilename = searchableFilename
+        lastResolvedNodeID = searchableNodeID
         refresh()
     }
 
@@ -90,7 +90,7 @@ private struct ReviewCard: View {
     /// changes to...", "Rejected..."), plus the resulting filename to search for
     /// if the banner is tapped (nil for Reject — see `ReviewView`), for the
     /// parent's confirmation banner.
-    let onResolved: (String, String?) -> Void
+    let onResolved: (String, Int64?) -> Void
 
     @State private var isEditing = false
     @State private var isRevealHovered = false
@@ -99,7 +99,7 @@ private struct ReviewCard: View {
     @State private var docTypeText: String
     @State private var titleText: String
 
-    init(node: Node, store: GraphStore, settings: SettingsStore, onResolved: @escaping (String, String?) -> Void) {
+    init(node: Node, store: GraphStore, settings: SettingsStore, onResolved: @escaping (String, Int64?) -> Void) {
         self.node = node
         self.store = store
         self.settings = settings
@@ -176,7 +176,7 @@ private struct ReviewCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(node.filename)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(ArchivistPalette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -266,18 +266,17 @@ private struct ReviewCard: View {
     // MARK: - Actions (skills/review.md Step 3/4, via ReviewActions)
 
     private func accept() {
-        // Uses the RESULTING node's filename, not `node.filename` — File Action
-        // (inside `resolve`) can rename the file as part of accepting it, so the
-        // name the confirmation banner should search for is whatever it ended up
-        // as on disk, not what it was called before acceptance.
+        // The ID identifies the exact node regardless of any rename File Action
+        // performs as part of accepting it — Search looks this node up directly
+        // by ID rather than re-deriving it from a (possibly now-stale) filename.
         let result = ReviewActions.accept(node: node, store: store, settings: settings)
-        onResolved("Accepted “\(node.filename)”.", result?.filename)
+        onResolved("Accepted “\(node.filename)”.", result?.id)
     }
 
     private func saveEdit() {
         let result = ReviewActions.edit(node: node, category: category.rawValue, docType: docTypeText, title: titleText,
                                          tags: [category.rawValue], store: store, settings: settings)
-        onResolved("Saved changes to “\(node.filename)”.", result?.filename)
+        onResolved("Saved changes to “\(node.filename)”.", result?.id)
     }
 
     private func reject() {
