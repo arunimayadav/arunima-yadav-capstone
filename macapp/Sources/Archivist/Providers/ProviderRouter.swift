@@ -104,7 +104,7 @@ final class ProviderRouter {
     /// valid values rather than a stray "Unsorted".
     private static func fallbackUnderstanding(error: Error) -> FileUnderstanding {
         FileUnderstanding(ownership: "other", category: FixedCategory.extra.rawValue, docType: "Other", title: "Untitled",
-                           summary: "Could not be analyzed automatically.",
+                           summary: "No summary",
                            tags: [FixedCategory.extra.rawValue], confidence: 0, reasoning: "AI call failed: \(error)")
     }
 }
