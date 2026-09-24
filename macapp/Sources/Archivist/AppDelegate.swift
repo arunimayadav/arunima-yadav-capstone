@@ -3,12 +3,13 @@ import SwiftUI
 import Combine
 
 /// Menu bar shell: NSStatusItem in the top toolbar, no Dock icon (.accessory),
-/// clicking opens a popover hosting ContentView — plan.md section 2/6.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+/// clicking opens a floating panel hosting ContentView — plan.md section 2/6.
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
-    private var popover: NSPopover?
+    private var panel: StatusPanel?
     private let environment = AppEnvironment()
     private var reviewCountCancellable: AnyCancellable?
+    private var clickOutsideMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[Archivist][AppDelegate] applicationDidFinishLaunching")
@@ -35,17 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.statusItem?.button?.image = Self.icon(withBadge: hasBadge)
             }
 
-        let contentView = ContentView(environment: environment)
-        let hostingController = NSHostingController(rootView: contentView)
-        // Fixed size set explicitly (matching ContentView.size) before the popover
-        // is ever shown — see the comment on ContentView for why leaving this to
-        // SwiftUI's automatic sizing let the window drift off the top of the screen.
-        hostingController.preferredContentSize = ContentView.size
-        let popover = NSPopover()
-        popover.contentViewController = hostingController
-        popover.contentSize = ContentView.size
-        popover.behavior = .transient
-        self.popover = popover
+        let panel = StatusPanel(size: ContentView.size, cornerRadius: ContentView.cornerRadius) {
+            ContentView(environment: self.environment)
+        }
+        panel.delegate = self
+        self.panel = panel
 
         environment.startWatching()
         print("[Archivist][AppDelegate] launch sequence complete")
@@ -56,17 +51,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePopover() {
-        guard let button = statusItem?.button, let popover else { return }
-        if popover.isShown {
-            popover.performClose(nil)
+        guard let button = statusItem?.button, let panel else { return }
+        if panel.isVisible {
+            closePanel()
         } else {
             // Clicking with a badge showing jumps straight to Review — that's the
             // whole point of the badge, the same way clicking a Mail unread count
             // takes you to the inbox rather than wherever you last were.
             environment.refreshReviewCount()
             environment.selectedTab = environment.pendingReviewCount > 0 ? .review : .search
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            showPanel(relativeTo: button)
         }
+    }
+
+    private func showPanel(relativeTo button: NSStatusBarButton) {
+        guard let panel, let buttonWindow = button.window else { return }
+        let buttonFrameOnScreen = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let panelSize = panel.frame.size
+        panel.setFrameOrigin(NSPoint(
+            x: buttonFrameOnScreen.midX - panelSize.width / 2,
+            y: buttonFrameOnScreen.minY - panelSize.height - 4
+        ))
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        // Stands in for NSPopover's old `.behavior = .transient` — a global
+        // monitor only fires for events outside our own app, which is exactly
+        // "clicked away from the dropdown" for a panel that has no other windows.
+        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.closePanel()
+        }
+    }
+
+    private func closePanel() {
+        panel?.orderOut(nil)
+        if let clickOutsideMonitor {
+            NSEvent.removeMonitor(clickOutsideMonitor)
+            self.clickOutsideMonitor = nil
+        }
+    }
+
+    /// Cmd+Tab away, Mission Control, a screen lock, etc. — anything that takes
+    /// key focus without a click the global mouse monitor above would catch.
+    func windowDidResignKey(_ notification: Notification) {
+        closePanel()
     }
 
     /// Composites a small red dot onto the folder glyph's top-right corner. The

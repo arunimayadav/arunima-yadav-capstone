@@ -8,25 +8,33 @@ enum ArchivistTab: CaseIterable, Identifiable {
     var id: Self { self }
 }
 
-/// The single popover surface for the whole app — plan.md section 6's
+/// The single dropdown surface for the whole app — plan.md section 6's
 /// "Search · Settings · Review · Commands" menu bar app shell.
 ///
 /// The whole view is pinned to one fixed size (`Self.size`, matching
-/// `AppDelegate.popoverSize`). Without this, switching to a tab with different
+/// `StatusPanel`'s size). Without this, switching to a tab with different
 /// intrinsic content (e.g. Settings' `Form` wants to grow taller than Search's
-/// `List`) resizes the popover *after* it's already anchored to the status item,
-/// and NSPopover can drift the window upward past the top of the screen instead of
+/// `List`) resizes the panel *after* it's already anchored to the status item,
+/// which could drift the window upward past the top of the screen instead of
 /// just growing downward. Fixing the size up front avoids that class of bug entirely.
 ///
-/// Styled to read as native system chrome rather than a plain white panel: a
-/// translucent material background (like Control Center / Notification Center)
-/// behind continuous ("squircle") rounded corners, at a more compact size than a
-/// typical document window.
+/// Background and corner rounding are NOT set here — `StatusPanel` wraps this
+/// view in a real `NSVisualEffectView` (`.underWindowBackground` material) and
+/// clips it to `Self.cornerRadius` at the AppKit layer, which is what actually
+/// produces a native Control-Center-style blur-through of whatever is behind the
+/// dropdown. A SwiftUI `.background(.ultraThinMaterial)` here would only ever
+/// tint on top of that, so this view stays transparent and lets the panel's own
+/// material show through everywhere it isn't covered by a card.
+///
+/// The single `.padding(16)` below is the whole content's margin from the panel
+/// edge on all four sides (per spec) — individual tabs (Search/Organize/Review)
+/// must NOT also pad their own edges, only their internal spacing between rows,
+/// or the margin would double up.
 struct ContentView: View {
     @ObservedObject var environment: AppEnvironment
 
-    static let size = NSSize(width: 380, height: 520)
-    private static let cornerRadius: CGFloat = 16
+    static let size = NSSize(width: 380, height: 320)
+    static let cornerRadius: CGFloat = 16
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,13 +60,8 @@ struct ContentView: View {
             // instant that filler content goes away.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .padding(16)
         .frame(width: Self.size.width, height: Self.size.height)
-        .background(.ultraThinMaterial)
-        // SwiftUI's `.continuous` style is the same squircle-interpolation corner
-        // Apple's own system chrome uses (app icons, Control Center) — the closest
-        // native equivalent to a Figma "corner smoothing" value; SwiftUI doesn't
-        // expose a separate numeric smoothing parameter to tune further.
-        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
     }
 }
 
@@ -79,37 +82,59 @@ private struct TopBar: View {
             segmentedControl
             gearButton
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
     }
 
+    /// Base fill + a row of hairline dividers UNDER the segments layer, so a
+    /// selected (or hovered) segment's own pill naturally paints over the divider
+    /// at its edges instead of a line visibly slicing through it — matching how
+    /// native macOS segmented controls hide dividers behind the active segment.
     private var segmentedControl: some View {
-        HStack(spacing: 0) {
-            ForEach(tabs, id: \.tab) { entry in
-                segment(entry.tab, entry.label)
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(ArchivistPalette.segmentedBackground)
+            HStack(spacing: 0) {
+                Color.clear.frame(width: Self.segmentWidth, height: Self.controlHeight)
+                divider
+                Color.clear.frame(width: Self.segmentWidth, height: Self.controlHeight)
+                divider
+                Color.clear.frame(width: Self.segmentWidth, height: Self.controlHeight)
+            }
+            HStack(spacing: 0) {
+                ForEach(tabs, id: \.tab) { entry in
+                    segment(entry.tab, entry.label)
+                }
             }
         }
-        .padding(2)
-        .frame(height: 32)
-        .background(ArchivistPalette.segmentedBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .frame(width: Self.controlWidth, height: Self.controlHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private static let controlWidth: CGFloat = 300
+    private static let controlHeight: CGFloat = 30
+    private static let segmentWidth: CGFloat = 100
+
+    private var divider: some View {
+        Rectangle()
+            .fill(ArchivistPalette.secondaryText.opacity(0.25))
+            .frame(width: 0.5, height: 24)
     }
 
     private func segment(_ tab: ArchivistTab, _ label: String) -> some View {
         let isSelected = selectedTab == tab
         return Text(label)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(isSelected ? Color.black : ArchivistPalette.secondaryText)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
+            .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+            .foregroundStyle(isSelected ? ArchivistPalette.primaryText : ArchivistPalette.secondaryText)
+            .frame(width: Self.segmentWidth, height: Self.controlHeight)
             .background {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color.white)
-                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                        .frame(height: 26)
+                        .shadow(color: .black.opacity(0.07), radius: 3, x: 0, y: 1)
                 } else if hoveredTab == tab {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color.black.opacity(0.04))
+                        .frame(height: 26)
                 }
             }
             .contentShape(Rectangle())
@@ -118,24 +143,22 @@ private struct TopBar: View {
     }
 
     private var gearButton: some View {
-        let isSelected = selectedTab == .settings
-        return Button {
+        Button {
             selectedTab = .settings
         } label: {
-            ZStack {
-                Circle().fill(ArchivistPalette.segmentedBackground)
-                if isSelected {
-                    Circle().fill(Color.black.opacity(0.08))
-                } else if isGearHovered {
-                    Circle().fill(Color.black.opacity(0.05))
-                }
-                Image(systemName: "gearshape")
-                    .font(.system(size: 16))
-                    .foregroundStyle(ArchivistPalette.secondaryText)
-            }
-            .frame(width: 28, height: 28)
+            Image(systemName: "gearshape")
+                .font(.system(size: 17, weight: .regular))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(StatefulIconButtonStyle(
+            isHovered: isGearHovered,
+            hitSize: 32,
+            normalColor: Color(hex: "5F6065"),
+            hoverColor: Color(hex: "2C2C2E"),
+            pressedColor: ArchivistPalette.primaryText,
+            hoverBackground: Color.black.opacity(0.075),
+            pressedBackground: Color.black.opacity(0.135),
+            pressedScale: 0.97
+        ))
         .onHover { isGearHovered = $0 }
     }
 }

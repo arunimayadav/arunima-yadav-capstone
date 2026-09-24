@@ -47,9 +47,7 @@ struct CommandView: View {
                 EmptyStateView(systemImage: "wand.and.stars")
             }
         }
-        .padding(.horizontal, 16)
         .padding(.top, 12)
-        .padding(.bottom, 16)
     }
 
     /// Feedback after a move (or its undo) — folder name and location spelled out

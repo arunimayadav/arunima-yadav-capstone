@@ -45,9 +45,7 @@ struct SearchView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
         .padding(.top, 12)
-        .padding(.bottom, 16)
     }
 
     /// A native-feeling, "inset" search field — matching macOS's system search
@@ -55,11 +53,12 @@ struct SearchView: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14))
-                .foregroundStyle(ArchivistPalette.placeholderText)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(ArchivistPalette.secondaryText.opacity(0.88))
             TextField("", text: $query, prompt: Text("Search your files by filename, content, or tag").foregroundColor(ArchivistPalette.placeholderText))
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
+                .foregroundColor(ArchivistPalette.primaryText)
                 .onSubmit(runSearch)
                 .onChange(of: query) { _ in runSearch() }
             if !query.isEmpty {
@@ -68,16 +67,27 @@ struct SearchView: View {
                     runSearch()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(ArchivistPalette.placeholderText.opacity(isClearHovered ? 1 : 0.7))
+                        .font(.system(size: 14))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(StatefulIconButtonStyle(
+                    isHovered: isClearHovered,
+                    hitSize: 28,
+                    normalColor: ArchivistPalette.placeholderText,
+                    hoverColor: ArchivistPalette.secondaryText,
+                    pressedColor: Color(hex: "4A4A4D")
+                ))
                 .onHover { isClearHovered = $0 }
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 36)
-        .background(ArchivistPalette.searchFieldBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.leading, 10)
+        .padding(.trailing, query.isEmpty ? 10 : 8)
+        .frame(height: 32)
+        .background(ArchivistPalette.searchFieldBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 0.75)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
     }
 
     private func runSearch() {

@@ -46,9 +46,7 @@ struct ReviewView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
         .padding(.top, 12)
-        .padding(.bottom, 16)
         .onAppear(perform: refresh)
     }
 

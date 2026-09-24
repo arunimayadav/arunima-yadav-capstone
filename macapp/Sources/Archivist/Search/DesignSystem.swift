@@ -31,10 +31,11 @@ extension Color {
 /// rather than inlined hex strings so the same shade is guaranteed identical
 /// everywhere it's used.
 enum ArchivistPalette {
-    static let segmentedBackground = Color(hex: "E8E8ED")
-    static let searchFieldBackground = Color(hex: "EBEBEF")
+    static let segmentedBackground = Color(hex: "E9E9ED")
+    static let searchFieldBackground = Color(hex: "E8E8EC")
     static let secondaryText = Color(hex: "6E6E73")
     static let placeholderText = Color(hex: "8E8E93")
+    static let primaryText = Color(hex: "1D1D1F")
     static let emptyStateIcon = Color(hex: "8E8E93").opacity(0.4)
     static let cardBackground = Color(hex: "F0F0F2")
     static let tertiaryText = Color(hex: "8E8E93")
@@ -182,5 +183,32 @@ struct HoverHighlight: ViewModifier {
 extension View {
     func hoverHighlight(cornerRadius: CGFloat = 8, opacity: Double = 0.05) -> some View {
         modifier(HoverHighlight(cornerRadius: cornerRadius, opacity: opacity))
+    }
+}
+
+/// A borderless icon button with three explicit, distinctly-colored states
+/// (normal/hover/pressed) instead of SwiftUI's default button chrome — used for
+/// the settings gear and the search field's clear button, both of which need a
+/// tappable area larger than their visible glyph (`hitSize`) plus per-state color
+/// per the design spec, not just an opacity dim on press.
+struct StatefulIconButtonStyle: ButtonStyle {
+    var isHovered: Bool
+    var hitSize: CGFloat
+    var normalColor: Color
+    var hoverColor: Color
+    var pressedColor: Color
+    var hoverBackground: Color = .clear
+    var pressedBackground: Color = .clear
+    var pressedScale: CGFloat = 1
+
+    func makeBody(configuration: Configuration) -> some View {
+        let isPressed = configuration.isPressed
+        configuration.label
+            .foregroundStyle(isPressed ? pressedColor : (isHovered ? hoverColor : normalColor))
+            .frame(width: hitSize, height: hitSize)
+            .background(Circle().fill(isPressed ? pressedBackground : (isHovered ? hoverBackground : .clear)))
+            .contentShape(Rectangle())
+            .scaleEffect(isPressed ? pressedScale : 1)
+            .animation(.easeInOut(duration: 0.13), value: isPressed)
     }
 }

@@ -63,7 +63,6 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding()
             // Forms/Lists paint their own opaque grouped background by default,
             // which would clash with the popover's translucent material — hiding
             // it lets Settings match the glass look the other tabs use.
