@@ -11,9 +11,26 @@ struct ReviewView: View {
     let store: GraphStore
     let settings: SettingsStore
     @State private var items: [Node] = []
+    @State private var lastOutcome: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Lives at the view level, not per-card — a card unmounts the instant
+            // its action resolves (it drops out of `items`), so any confirmation
+            // state kept on the card itself would vanish before it could be seen.
+            // This is the same gap Organize already had fixed for its own actions.
+            if let lastOutcome {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(lastOutcome)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(ArchivistPalette.secondaryText)
+                }
+                .padding(12)
+                .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
             if items.isEmpty {
                 EmptyStateView(
                     systemImage: "checkmark.circle",
@@ -23,7 +40,7 @@ struct ReviewView: View {
                 ScrollView {
                     VStack(spacing: 8) {
                         ForEach(items) { node in
-                            ReviewCard(node: node, store: store, settings: settings, onResolved: refresh)
+                            ReviewCard(node: node, store: store, settings: settings, onResolved: resolved)
                         }
                     }
                 }
@@ -33,6 +50,11 @@ struct ReviewView: View {
         .padding(.top, 12)
         .padding(.bottom, 16)
         .onAppear(perform: refresh)
+    }
+
+    private func resolved(_ message: String) {
+        lastOutcome = message
+        refresh()
     }
 
     private func refresh() {
@@ -47,24 +69,27 @@ private struct ReviewCard: View {
     let node: Node
     let store: GraphStore
     let settings: SettingsStore
-    let onResolved: () -> Void
+    /// A human-readable summary of what just happened ("Accepted...", "Saved
+    /// changes to...", "Rejected..."), for the parent's confirmation banner.
+    let onResolved: (String) -> Void
 
     @State private var isEditing = false
     @State private var isRevealHovered = false
-    @State private var categoryText: String
+    @State private var category: FixedCategory
     @State private var docTypeText: String
     @State private var titleText: String
-    @State private var tagsText: String
 
-    init(node: Node, store: GraphStore, settings: SettingsStore, onResolved: @escaping () -> Void) {
+    init(node: Node, store: GraphStore, settings: SettingsStore, onResolved: @escaping (String) -> Void) {
         self.node = node
         self.store = store
         self.settings = settings
         self.onResolved = onResolved
-        _categoryText = State(initialValue: node.category)
+        // Normalized on entry — a stale pre-fixed-category record (like the
+        // leftover "Course" values from before this system existed) shouldn't
+        // make the picker show no selection at all.
+        _category = State(initialValue: FixedCategory.from(node.category))
         _docTypeText = State(initialValue: node.docType)
         _titleText = State(initialValue: node.title)
-        _tagsText = State(initialValue: node.tags.joined(separator: ", "))
     }
 
     var body: some View {
@@ -97,23 +122,20 @@ private struct ReviewCard: View {
         )
     }
 
+    /// No category/ownership/docType pills here anymore — the reviewer is about
+    /// to choose the tag themselves (see the category picker below), so showing
+    /// the model's own guess as a set of pills right above that choice was
+    /// confusing rather than informative.
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
             let glyph = FileTypeGlyph.symbol(for: node.filename)
             FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, maxWidth: 36, maxHeight: 36)
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(node.filename)
-                        .font(ArchivistType.title)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    TagPill(text: node.category, background: Color.orange.opacity(0.15), foreground: .orange)
-                    TagPill(text: node.ownership, background: Color.purple.opacity(0.15), foreground: .purple)
-                    if !node.docType.isEmpty {
-                        TagPill(text: node.docType, background: Color.gray.opacity(0.15), foreground: .gray)
-                    }
-                }
+                Text(node.filename)
+                    .font(ArchivistType.title)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
                 } label: {
@@ -136,12 +158,31 @@ private struct ReviewCard: View {
 
     private var editFields: some View {
         VStack(alignment: .leading, spacing: 6) {
-            labeledField("Category", text: $categoryText)
+            categoryPicker
             labeledField("Doc type", text: $docTypeText)
             labeledField("Title", text: $titleText)
-            labeledField("Tags", text: $tagsText)
         }
         .padding(.top, 2)
+    }
+
+    /// One of exactly five fixed values (skills/tagging.md) — a picker, not a
+    /// text field, since there's nothing else valid to type. Category IS the tag
+    /// now, so choosing it here is the whole "assign a tag" decision; there's no
+    /// separate tags field to also show.
+    private var categoryPicker: some View {
+        HStack(spacing: 6) {
+            Text("Category")
+                .font(ArchivistType.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .leading)
+            Picker("", selection: $category) {
+                ForEach(FixedCategory.allCases, id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+        }
     }
 
     private func labeledField(_ label: String, text: Binding<String>) -> some View {
@@ -188,21 +229,17 @@ private struct ReviewCard: View {
 
     private func accept() {
         ReviewActions.accept(node: node, store: store, settings: settings)
-        onResolved()
+        onResolved("Accepted “\(node.filename)”.")
     }
 
     private func saveEdit() {
-        let tags = tagsText
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        ReviewActions.edit(node: node, category: categoryText, docType: docTypeText, title: titleText,
-                            tags: tags, store: store, settings: settings)
-        onResolved()
+        ReviewActions.edit(node: node, category: category.rawValue, docType: docTypeText, title: titleText,
+                            tags: [category.rawValue], store: store, settings: settings)
+        onResolved("Saved changes to “\(node.filename)”.")
     }
 
     private func reject() {
         ReviewActions.reject(node: node, store: store)
-        onResolved()
+        onResolved("Rejected “\(node.filename)”.")
     }
 }

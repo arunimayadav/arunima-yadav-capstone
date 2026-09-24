@@ -77,10 +77,18 @@ struct FileThumbnailView: View {
     var body: some View {
         Group {
             if let thumbnail {
+                // Exact fitted size, not `.frame(maxWidth:maxHeight:)` — that only
+                // caps the box the image is *drawn within*, so for anything that
+                // isn't already exactly square, the image itself renders smaller
+                // than the box and the pageSurface background behind it fills the
+                // leftover space as a visible plain-color margin. Sizing the frame
+                // to the image's own fitted dimensions means there's no leftover
+                // space for a margin to appear in — the container IS the image.
+                let size = fittedSize(for: thumbnail.size)
                 Image(nsImage: thumbnail)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: maxWidth, maxHeight: maxHeight)
+                    .frame(width: size.width, height: size.height)
                     .background(ArchivistPalette.pageSurface)
                     .pageCornerStyle()
                     // Quick Look/Preview-style page shadow — only the real
@@ -101,6 +109,18 @@ struct FileThumbnailView: View {
         .task(id: path) {
             await loadThumbnail()
         }
+    }
+
+    /// The image's own size scaled down (never up) to fit within maxWidth/maxHeight
+    /// while preserving aspect ratio — computed explicitly rather than left to
+    /// `.frame(maxWidth:maxHeight:)`, which reports the full requested box as its
+    /// size regardless of the image's actual proportions.
+    private func fittedSize(for imageSize: CGSize) -> CGSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return CGSize(width: maxWidth, height: maxHeight)
+        }
+        let scale = min(maxWidth / imageSize.width, maxHeight / imageSize.height, 1)
+        return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
     }
 
     @MainActor

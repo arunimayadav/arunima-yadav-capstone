@@ -17,22 +17,21 @@ struct SearchView: View {
             searchField
 
             if results.isEmpty {
+                // Only the "no matches" case gets text — that's feedback about
+                // what just happened, not generic how-to-use instruction. Before
+                // any search, the field's own placeholder already says how to use
+                // this screen, so nothing else here repeats it.
                 EmptyStateView(
                     systemImage: "magnifyingglass",
                     instruction: hasSearched
                         ? "No matches for “\(query)”. Try another word from the file's name, content, or tag."
-                        : "Search by filename, content, or tag."
+                        : nil
                 )
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(results) { node in
-                            SearchResultCard(
-                                node: node,
-                                onOpen: {
-                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.path)])
-                                }
-                            )
+                            SearchResultCard(node: node)
                             // "Show related" lives below the card, not inside its
                             // background/padding — a separate, secondary action,
                             // not part of the card itself.
@@ -58,7 +57,7 @@ struct SearchView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14))
                 .foregroundStyle(ArchivistPalette.placeholderText)
-            TextField("", text: $query, prompt: Text("Search your files").foregroundColor(ArchivistPalette.placeholderText))
+            TextField("", text: $query, prompt: Text("Search your files by filename, content, or tag").foregroundColor(ArchivistPalette.placeholderText))
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
                 .onSubmit(runSearch)
@@ -89,15 +88,16 @@ struct SearchView: View {
 }
 
 /// A single search result: a real thumbnail of the file's first page/content
-/// (not just a type glyph), filename + the tag actually assigned to it, a
-/// description you can tap to read in full, and the date tucked in the card's
-/// corner. Tapping the icon/filename/tag row reveals the file in Finder; tapping
-/// the description instead expands or collapses it in place.
+/// (not just a type glyph), filename + the tag actually assigned to it, a short
+/// description, and the date tucked in the card's corner. Tapping anywhere on the
+/// card opens the full record (skills/metadata-enrichment.md) — location, status,
+/// confidence, timestamps, full summary — with Reveal in Finder available there,
+/// rather than the card itself trying to juggle two different tap targets for
+/// two different actions.
 private struct SearchResultCard: View {
     let node: Node
-    let onOpen: () -> Void
 
-    @State private var isSummaryExpanded = false
+    @State private var showDetail = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -132,15 +132,11 @@ private struct SearchResultCard: View {
                             .lineLimit(1)
                             .layoutPriority(1)
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: onOpen)
 
                     Text(node.summary)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(ArchivistPalette.secondaryText)
-                        .lineLimit(isSummaryExpanded ? nil : 2)
-                        .contentShape(Rectangle())
-                        .onTapGesture { isSummaryExpanded.toggle() }
+                        .lineLimit(2)
                 }
             }
             .hoverHighlight(cornerRadius: 8)
@@ -149,6 +145,12 @@ private struct SearchResultCard: View {
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading) // matches the search bar's width exactly
         .background(ArchivistPalette.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
+        .contentShape(Rectangle())
+        .onTapGesture { showDetail = true }
+        .popover(isPresented: $showDetail) {
+            NodeDetailView(node: node)
+                .frame(width: 320, height: 420)
+        }
     }
 }
 

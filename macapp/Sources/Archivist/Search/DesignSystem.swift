@@ -137,18 +137,24 @@ enum RelativeDate {
 /// a plainer, quieter empty state.
 struct EmptyStateView: View {
     let systemImage: String
-    let instruction: String
+    /// Optional — Search and Organize pass nil here since their field's own
+    /// placeholder text is the only instructional copy those screens show;
+    /// nothing else on screen duplicates it. Review still passes text since it
+    /// has no input field to carry that role.
+    var instruction: String? = nil
 
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(ArchivistPalette.emptyStateIcon)
-            Text(instruction)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(ArchivistPalette.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+            if let instruction {
+                Text(instruction)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(ArchivistPalette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
         }
         .padding(.top, 90)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

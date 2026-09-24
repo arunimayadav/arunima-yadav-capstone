@@ -42,10 +42,9 @@ struct CommandView: View {
             } else if let moveOutcome {
                 moveOutcomeView(moveOutcome)
             } else if !isLoading && errorMessage == nil && instruction.isEmpty {
-                EmptyStateView(
-                    systemImage: "wand.and.stars",
-                    instruction: "Describe how you'd like your files organized."
-                )
+                // No instructional text here — the field's own placeholder already
+                // shows an example of how to use this screen.
+                EmptyStateView(systemImage: "wand.and.stars")
             }
         }
         .padding(.horizontal, 16)
@@ -96,7 +95,7 @@ struct CommandView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(ArchivistPalette.placeholderText)
             TextField("", text: $instruction,
-                      prompt: Text("What should Archivist organize?").foregroundColor(ArchivistPalette.placeholderText))
+                      prompt: Text("e.g. put my finance files in a folder").foregroundColor(ArchivistPalette.placeholderText))
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
                 .onSubmit(propose)

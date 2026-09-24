@@ -44,7 +44,13 @@ struct ContentView: View {
                     SettingsView(settings: environment.settings)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Explicit .top alignment is the actual fix here, not decoration: without
+            // it this frame defaults to centering its content, so any tab whose
+            // content is shorter than the full popover height (e.g. Organize with
+            // just its input field showing, once the empty state that used to fill
+            // the space disappears) visibly jumps from the top to the middle the
+            // instant that filler content goes away.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .background(.ultraThinMaterial)
