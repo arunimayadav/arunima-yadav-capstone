@@ -383,10 +383,22 @@ final class GraphStore {
     /// and higher still if every term matched somewhere. A node needs only one term
     /// to match to appear at all, so a multi-word query doesn't silently return nothing
     /// just because one word wasn't in the file.
+    ///
+    /// Two guards keep this from being "any substring, anywhere, counts": terms
+    /// shorter than a real word are dropped before matching (a bare "c" would
+    /// otherwise `.contains` into "Finance", "PVR3Growth", almost anything), and a
+    /// node needs a minimum total score to surface at all, not just >0 — a single
+    /// coincidental hit deep in a content body (worth 1 point) shouldn't be treated
+    /// as a real match on its own.
     func search(query: String, limit: Int = 20) -> [Node] {
         let needle = query.lowercased()
-        let terms = needle.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        let terms = needle
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { $0.count >= 2 }
         guard !terms.isEmpty else { return [] }
+
+        let minimumScore = 3
 
         let scored: [(node: Node, score: Int)] = allNodes().compactMap { node in
             let filename = node.filename.lowercased()
@@ -401,10 +413,14 @@ final class GraphStore {
                 if filename.contains(term) { score += 5; termMatched = true }
                 if tags.contains(where: { $0.contains(term) }) { score += 4; termMatched = true }
                 if category.contains(term) { score += 3; termMatched = true }
-                if content.contains(term) { score += 1; termMatched = true }
+                // Content matches need a slightly longer term — a 2-letter term
+                // matching somewhere in a multi-page body of text is essentially
+                // noise (it'll hit almost every document), unlike the same term
+                // matching a short, specific field like a filename or tag.
+                if term.count >= 3 && content.contains(term) { score += 1; termMatched = true }
                 if termMatched { matchedTerms += 1 }
             }
-            guard matchedTerms > 0 else { return nil }
+            guard matchedTerms > 0, score >= minimumScore else { return nil }
             if matchedTerms == terms.count { score += 10 } // every word in the query matched somewhere
             return (node, score)
         }

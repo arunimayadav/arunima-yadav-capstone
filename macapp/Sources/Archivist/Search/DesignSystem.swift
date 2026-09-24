@@ -64,6 +64,31 @@ struct TagPill: View {
             .background(background, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .foregroundStyle(foreground)
     }
+
+    /// A pill colored to match the REAL macOS Finder tag color this exact tag
+    /// string would get (or already has) written to disk — same deterministic
+    /// FinderLabelColor computation TagWriter uses, so the pill never shows a
+    /// color that disagrees with what's actually on the file.
+    static func forFinderTag(_ tag: String) -> TagPill {
+        let color = FinderLabelColor.color(forIndex: FinderLabelColor.index(for: tag))
+        return TagPill(text: tag, background: color.opacity(0.18), foreground: color)
+    }
+}
+
+extension FinderLabelColor {
+    /// Apple's standard system palette, in the same 1-7 order as `names` — the
+    /// colors people already associate with these names elsewhere on macOS.
+    static func color(forIndex index: Int) -> Color {
+        switch index {
+        case 1: return Color(hex: "8E8E93") // Gray
+        case 2: return Color(hex: "34C759") // Green
+        case 3: return Color(hex: "AF52DE") // Purple
+        case 4: return Color(hex: "007AFF") // Blue
+        case 5: return Color(hex: "FFCC00") // Yellow
+        case 6: return Color(hex: "FF3B30") // Red
+        default: return Color(hex: "FF9500") // Orange
+        }
+    }
 }
 
 /// Maps a file extension to an SF Symbol + tint, so results are scannable by type

@@ -65,16 +65,21 @@ enum PromptBuilder {
         """
         You are a file-organization assistant. Given a file's name and a text excerpt,
         return STRICT JSON only, no prose, matching this shape:
-        {"ownership": "own" or "other", "category": string, "docType": string, "title": string, "summary": string, "tags": [string], "confidence": number between 0 and 1, "reasoning": string}
+        {"ownership": "own" or "other", "category": string, "docType": string, "title": string, "summary": string, "tag": string, "confidence": number between 0 and 1, "reasoning": string}
 
-        === Tagging skill (governs the "tags" field — follow its rules, but never copy
+        === Tagging skill (governs the "tag" field — follow its rules, but never copy
         any example word or phrase from this section itself into your answer; every
         word you output must come only from the actual excerpt below or from the real
         existing tag vocabulary listed after this section) ===
         \(SkillLoader.tagging)
         === end tagging skill ===
 
-        Existing tag vocabulary, per Step 1 of the tagging skill above — try these first: \(existingTags.joined(separator: ", "))
+        Existing tag vocabulary, per Step 0/1 of the tagging skill above: \(existingTags.joined(separator: ", "))
+        Reuse one of these ONLY if it genuinely, obviously describes this file's actual
+        subject. Being on this list is not a reason to pick it — a wrong reused tag is a
+        worse outcome than a new, precise one. If nothing above is a clear fit, invent a
+        short new tag instead of forcing the closest existing one onto a file it doesn't
+        really describe.
 
         Field definitions:
         - "ownership": "own" if this is the archive owner's own authored work
@@ -88,8 +93,10 @@ enum PromptBuilder {
         - "title": a short, clean version of THIS file's actual subject (2-5 words, no
           punctuation), describing what the excerpt below is actually about.
         - "summary" is one or two plain-language sentences about what this file actually
-          is, independent of category/tags, describing only the excerpt below.
-        - "confidence" reflects how sure you are about category+tags given the excerpt length/quality.
+          is, independent of category/tag, describing only the excerpt below.
+        - "tag": exactly ONE tag, per the tagging skill above — not a list, not a comma-
+          separated string, a single short topic tag.
+        - "confidence" reflects how sure you are about category+tag given the excerpt length/quality.
 
         Every field above must be grounded only in the filename and excerpt given below —
         never in any example text from the tagging skill section.
@@ -130,7 +137,7 @@ struct UnderstandingJSON: Decodable {
     var docType: String
     var title: String
     var summary: String
-    var tags: [String]
+    var tag: String
     var confidence: Double
     var reasoning: String
 }
@@ -144,8 +151,9 @@ extension AIProvider {
     func decodeUnderstanding(_ raw: String) throws -> FileUnderstanding {
         guard let data = PromptBuilder.extractJSON(from: raw) else { throw ProviderError.badResponse }
         let parsed = try JSONDecoder().decode(UnderstandingJSON.self, from: data)
+        let tag = parsed.tag.trimmingCharacters(in: .whitespacesAndNewlines)
         return FileUnderstanding(ownership: parsed.ownership, category: parsed.category, docType: parsed.docType,
-                                  title: parsed.title, summary: parsed.summary, tags: parsed.tags,
+                                  title: parsed.title, summary: parsed.summary, tags: tag.isEmpty ? [] : [tag],
                                   confidence: parsed.confidence, reasoning: parsed.reasoning)
     }
 

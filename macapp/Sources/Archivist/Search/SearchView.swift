@@ -103,7 +103,7 @@ private struct SearchResultCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 let glyph = FileTypeGlyph.symbol(for: node.filename)
-                FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, size: 40)
+                FileThumbnailView(path: node.path, glyphName: glyph.name, glyphTint: glyph.tint, maxWidth: 56, maxHeight: 56)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -115,7 +115,7 @@ private struct SearchResultCard: View {
                         // The tag actually assigned to the file (same as its
                         // Finder tag), not the broader classification bucket —
                         // falls back to category only if no topic tag exists.
-                        TagPill(text: node.tags.first ?? node.category)
+                        TagPill.forFinderTag(node.tags.first ?? node.category)
                     }
                     .contentShape(Rectangle())
                     .onTapGesture(perform: onOpen)

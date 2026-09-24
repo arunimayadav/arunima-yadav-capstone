@@ -3,15 +3,6 @@ import Foundation
 /// Mirrors the graph's own tags onto the file as native macOS Finder tags, so the
 /// organization is visible in Finder/Spotlight outside the app — plan.md section 6/8.
 enum TagWriter {
-    /// macOS's 7 predefined color tags, in the classic Finder Label order (this
-    /// ordering is long-standing/well-documented AppleScript "label index" order).
-    /// Finder's sidebar entries under Tags ("Red", "Yellow", ...) are saved searches
-    /// matching files whose tag NAME is exactly one of these strings — clicking
-    /// "Yellow" does not look at the separate labelNumber attribute at all. So to
-    /// make a file findable that way, one of these names has to actually be added
-    /// as a real tag, not just implied by a color-only attribute.
-    private static let labelColorNames = ["Gray", "Green", "Purple", "Blue", "Yellow", "Red", "Orange"]
-
     @discardableResult
     static func write(category: String, tags: [String], to url: URL) -> Bool {
         // Keyed off the primary *tag* (what's actually shown in the UI's pill),
@@ -20,10 +11,17 @@ enum TagWriter {
         // added) show mismatched colors. Now that "same category -> same tag" is
         // guaranteed upstream, keying on the tag directly means "same tag, same
         // color" holds unconditionally, not just as a side effect of category
-        // hashing to the same bucket.
+        // hashing to the same bucket. FinderLabelColor is the single shared
+        // computation the UI's pill also uses, so what's written here and what's
+        // displayed there can never drift apart.
         let colorKey = tags.first ?? category
-        let colorIndex = colorLabel(for: colorKey) // 1-7
-        let colorName = labelColorNames[colorIndex - 1]
+        let colorIndex = FinderLabelColor.index(for: colorKey) // 1-7
+        // Finder's sidebar entries under Tags ("Red", "Yellow", ...) are saved
+        // searches matching files whose tag NAME is exactly one of these strings —
+        // clicking "Yellow" does not look at the separate labelNumber attribute at
+        // all, so one of these names has to actually be added as a real tag, not
+        // just implied by a color-only attribute.
+        let colorName = FinderLabelColor.names[colorIndex - 1]
 
         // De-duplicated: the AI's own "tags" list can legitimately repeat the
         // category (e.g. category="Finance" and tags=["Finance", "Bank Statement"]),
@@ -58,13 +56,5 @@ enum TagWriter {
         }
 
         return success
-    }
-
-    /// Deterministic so the same category always gets the same color across files —
-    /// that consistency is what makes color-grouping in Finder actually useful.
-    /// 1-7 are Finder's seven label colors.
-    private static func colorLabel(for category: String) -> Int {
-        let hash = category.lowercased().unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
-        return (hash % 7) + 1
     }
 }

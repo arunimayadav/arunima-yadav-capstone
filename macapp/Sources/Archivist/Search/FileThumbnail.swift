@@ -17,11 +17,19 @@ private final class ThumbnailCache {
 /// Finder/Quick Look show), not just a generic file-type glyph. Falls back to the
 /// type glyph while the thumbnail is loading or if none could be generated (e.g.
 /// the file has since moved or Quick Look has no generator for it).
+///
+/// A real thumbnail keeps the file's own natural aspect ratio (a wide slide stays
+/// wide, a portrait document stays tall) rather than being force-cropped into a
+/// fixed square — matching how Quick Look and Finder show previews — bounded only
+/// by `maxWidth`/`maxHeight` so it still fits the card. The fallback glyph, which
+/// isn't a real preview of anything, keeps the fixed square treatment since a
+/// generic icon has no "natural shape" to preserve.
 struct FileThumbnailView: View {
     let path: String
     let glyphName: String
     let glyphTint: Color
-    var size: CGFloat = 40
+    var maxWidth: CGFloat = 56
+    var maxHeight: CGFloat = 56
 
     @State private var thumbnail: NSImage?
 
@@ -30,14 +38,14 @@ struct FileThumbnailView: View {
             if let thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: size, height: size)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: maxWidth, maxHeight: maxHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             } else {
                 Image(systemName: glyphName)
-                    .font(.system(size: size * 0.4))
+                    .font(.system(size: maxHeight * 0.4))
                     .foregroundStyle(glyphTint)
-                    .frame(width: size, height: size)
+                    .frame(width: maxHeight, height: maxHeight)
                     .background(glyphTint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
@@ -56,9 +64,15 @@ struct FileThumbnailView: View {
 
         let url = URL(fileURLWithPath: path)
         let scale = NSScreen.main?.backingScaleFactor ?? 2
+        // Requesting at the larger of the two caps and letting SwiftUI's own
+        // aspectRatio(.fit) constrain the final render — QLThumbnailGenerator
+        // already returns an appropriately-proportioned image for the requested
+        // box, this just avoids asking for a needlessly small render on the
+        // dimension that isn't the limiting one for a given file's shape.
+        let requestSize = max(maxWidth, maxHeight)
         let request = QLThumbnailGenerator.Request(
             fileAt: url,
-            size: CGSize(width: size, height: size),
+            size: CGSize(width: requestSize, height: requestSize),
             scale: scale,
             representationTypes: .thumbnail
         )
