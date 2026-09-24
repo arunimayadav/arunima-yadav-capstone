@@ -68,9 +68,9 @@ enum FileAction {
             print("[Archivist][FileAction] \(name): renamed -> \(newName) (\(triggeredBy))")
         }
 
-        if TagWriter.write(category: finalNode.category, tags: finalNode.tags, to: finalURL) {
-            print("[Archivist][FileAction] \(finalURL.lastPathComponent): wrote Finder tags " +
-                  "\(Array(Set([finalNode.category] + finalNode.tags)))")
+        if TagWriter.write(category: finalNode.category, to: finalURL) {
+            print("[Archivist][FileAction] \(finalURL.lastPathComponent): wrote Finder tag " +
+                  "\(finalNode.category)")
         }
 
         return finalNode

@@ -65,13 +65,15 @@ struct TagPill: View {
             .foregroundStyle(foreground)
     }
 
-    /// A pill colored to match the REAL macOS Finder tag color this exact tag
-    /// string would get (or already has) written to disk — same deterministic
-    /// FinderLabelColor computation TagWriter uses, so the pill never shows a
-    /// color that disagrees with what's actually on the file.
+    /// A pill colored to match the REAL macOS Finder tag color this exact category
+    /// gets (or already has) written to disk — same fixed FixedCategory.
+    /// finderLabelIndex mapping TagWriter uses, so the pill can never show a color
+    /// that disagrees with what's actually on the file, and (per rule #3 of the
+    /// fixed-category system) the same category always renders the same color.
     static func forFinderTag(_ tag: String) -> TagPill {
-        let color = FinderLabelColor.color(forIndex: FinderLabelColor.index(for: tag))
-        return TagPill(text: tag, background: color.opacity(0.18), foreground: color)
+        let fixedCategory = FixedCategory.from(tag)
+        let color = FinderLabelColor.color(forIndex: fixedCategory.finderLabelIndex)
+        return TagPill(text: fixedCategory.rawValue, background: color.opacity(0.18), foreground: color)
     }
 }
 

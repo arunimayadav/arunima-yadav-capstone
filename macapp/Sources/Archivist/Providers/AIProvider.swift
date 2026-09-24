@@ -37,69 +37,58 @@ enum ProviderError: Error {
 /// (cloud, keyed) — see plan.md section 6/9.
 protocol AIProvider {
     var kind: ProviderKind { get }
-    func understand(excerpt: String, filename: String, existingTags: [String]) async throws -> FileUnderstanding
+    func understand(excerpt: String, filename: String) async throws -> FileUnderstanding
     func embed(text: String) async throws -> [Float]
     func interpretCommand(_ text: String) async throws -> ParsedCommand
 }
 
 /// Shared prompt-building so every provider asks the same question the same way.
 ///
-/// Only skills/tagging.md is embedded verbatim here (read fresh off disk by
-/// SkillLoader) — tagging is a genuine judgment call the model has to make, so it
-/// needs the real rules text. skills/filename-nomenclature.md is deliberately NOT
-/// embedded: its Step 1/Step 2 (pattern assembly, collision resolution) is
-/// deterministic and implemented directly in FilenameNomenclature.swift against
-/// the real file, so the model never needs to see that skill's own text — it only
-/// supplies the four raw judgment fields (ownership/category/docType/title) that
-/// feed into it.
+/// skills/tagging.md is embedded verbatim here (read fresh off disk by
+/// SkillLoader). It's now a closed 5-way classification (Finance/Academic/
+/// Personal/Health/Extra), not an open-ended judgment call — the model no longer
+/// needs (or sees) a growing "existing tags" vocabulary to reuse from, since there
+/// is nothing left to reuse: the five category names ARE the entire tag
+/// vocabulary, permanently. `FixedCategory` in the Core layer is the code-level
+/// backstop if a model still drifts and returns something else anyway.
 ///
-/// This split exists because of a confirmed failure mode: embedding
-/// filename-nomenclature.md's own worked example ("DesignThinking_Lecture2_Slides.pptx")
-/// caused the local model to echo those literal example words as its answer for an
-/// unrelated file, instead of reasoning about the actual excerpt — the skill file's
-/// illustrative example became a distractor. tagging.md has the same kind of
-/// example text (e.g. "not DesignThinking-Week2-Notes"), so it stays, but with an
-/// explicit instruction below not to copy from it.
+/// skills/filename-nomenclature.md stays deliberately NOT embedded: its Step 1/2
+/// (pattern assembly, collision resolution) is deterministic and implemented
+/// directly in FilenameNomenclature.swift against the real file, so the model
+/// never needs to see that skill's own text — it only supplies the raw judgment
+/// fields (ownership/docType/title) that feed into it. (Confirmed failure mode
+/// from testing: embedding that skill's own worked example caused a local model
+/// to echo the example's literal words as its answer for an unrelated file.)
 enum PromptBuilder {
-    static func understandingPrompt(excerpt: String, filename: String, existingTags: [String]) -> String {
+    static func understandingPrompt(excerpt: String, filename: String) -> String {
         """
         You are a file-organization assistant. Given a file's name and a text excerpt,
         return STRICT JSON only, no prose, matching this shape:
-        {"ownership": "own" or "other", "category": string, "docType": string, "title": string, "summary": string, "tag": string, "confidence": number between 0 and 1, "reasoning": string}
+        {"ownership": "own" or "other", "category": "Finance" or "Academic" or "Personal" or "Health" or "Extra", "docType": string, "title": string, "summary": string, "confidence": number between 0 and 1, "reasoning": string}
 
-        === Tagging skill (governs the "tag" field — follow its rules, but never copy
-        any example word or phrase from this section itself into your answer; every
-        word you output must come only from the actual excerpt below or from the real
-        existing tag vocabulary listed after this section) ===
+        === Tagging skill (governs the "category" field — this is a closed choice
+        among exactly five values, not an open-ended judgment call) ===
         \(SkillLoader.tagging)
         === end tagging skill ===
-
-        Existing tag vocabulary, per Step 0/1 of the tagging skill above: \(existingTags.joined(separator: ", "))
-        Reuse one of these ONLY if it genuinely, obviously describes this file's actual
-        subject. Being on this list is not a reason to pick it — a wrong reused tag is a
-        worse outcome than a new, precise one. If nothing above is a clear fit, invent a
-        short new tag instead of forcing the closest existing one onto a file it doesn't
-        really describe.
 
         Field definitions:
         - "ownership": "own" if this is the archive owner's own authored work
           (an essay, an assignment, personal writing); "other" if it's something
           they received or downloaded from someone else (a lecture deck, a reading,
           an invoice, a statement).
-        - "category": a short bucket describing what kind of file this is (e.g. Finance,
-          Course, Personal, Work) — based only on the excerpt below, never a guess.
+        - "category": exactly one of Finance, Academic, Personal, Health, Extra —
+          spelled exactly like that, nothing else is valid. Use Extra whenever the
+          file genuinely doesn't belong in the other four; that is correct, not a
+          fallback to avoid.
         - "docType": a short document type (Essay, Notes, Slides, Reading, Assignment,
           Invoice, Statement, Receipt, etc.) — pick the closest fit to the excerpt below.
         - "title": a short, clean version of THIS file's actual subject (2-5 words, no
           punctuation), describing what the excerpt below is actually about.
         - "summary" is one or two plain-language sentences about what this file actually
-          is, independent of category/tag, describing only the excerpt below.
-        - "tag": exactly ONE tag, per the tagging skill above — not a list, not a comma-
-          separated string, a single short topic tag.
-        - "confidence" reflects how sure you are about category+tag given the excerpt length/quality.
+          is, independent of category, describing only the excerpt below.
+        - "confidence" reflects how sure you are about the category given the excerpt length/quality.
 
-        Every field above must be grounded only in the filename and excerpt given below —
-        never in any example text from the tagging skill section.
+        Every field above must be grounded only in the filename and excerpt given below.
 
         Filename: \(filename)
         Excerpt:
@@ -137,7 +126,6 @@ struct UnderstandingJSON: Decodable {
     var docType: String
     var title: String
     var summary: String
-    var tag: String
     var confidence: Double
     var reasoning: String
 }
@@ -151,9 +139,12 @@ extension AIProvider {
     func decodeUnderstanding(_ raw: String) throws -> FileUnderstanding {
         guard let data = PromptBuilder.extractJSON(from: raw) else { throw ProviderError.badResponse }
         let parsed = try JSONDecoder().decode(UnderstandingJSON.self, from: data)
-        let tag = parsed.tag.trimmingCharacters(in: .whitespacesAndNewlines)
-        return FileUnderstanding(ownership: parsed.ownership, category: parsed.category, docType: parsed.docType,
-                                  title: parsed.title, summary: parsed.summary, tags: tag.isEmpty ? [] : [tag],
+        // Normalized here, once, regardless of which provider answered: category
+        // is clamped to one of the five fixed values (falling back to Extra for
+        // anything else), and IS the tag now — no separate open-ended tag field.
+        let category = FixedCategory.from(parsed.category).rawValue
+        return FileUnderstanding(ownership: parsed.ownership, category: category, docType: parsed.docType,
+                                  title: parsed.title, summary: parsed.summary, tags: [category],
                                   confidence: parsed.confidence, reasoning: parsed.reasoning)
     }
 

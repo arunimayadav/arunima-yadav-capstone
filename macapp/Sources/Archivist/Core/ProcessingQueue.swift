@@ -2,16 +2,13 @@ import Foundation
 
 /// Processes watched files strictly one at a time, FIFO.
 ///
-/// Without this, each detected file spawned its own independent Task, so two files
-/// landing within the same few minutes (very plausible: the AI call alone takes
-/// 1-3+ minutes with local Ollama) could both fetch `existingTags` from the graph
-/// before either had finished inserting — the second file would have no visibility
-/// into the first's just-chosen tags, undermining skills/tagging.md's "check
-/// existing tags first" requirement in practice even though the code path does
-/// query the database correctly. Serializing guarantees that by the time any file's
-/// existingTags snapshot is taken, every previously-detected file has fully
-/// finished (including its DB insert), so genuinely similar content downloaded
-/// close together reliably sees and can reuse each other's tags.
+/// Without this, each detected file would spawn its own independent Task, and two
+/// files landing within the same few minutes (very plausible: the AI call alone
+/// takes 1-3+ minutes with local Ollama) could both be mid-flight at once —
+/// hammering local Ollama with concurrent requests it has to serialize internally
+/// anyway, and racing on the content-hash insert if they happen to be
+/// byte-identical. Serializing here keeps that simple and predictable: one file
+/// fully completes (including its DB insert) before the next one starts.
 actor ProcessingQueue {
     private let pipeline: Pipeline
     private var pending: [URL] = []

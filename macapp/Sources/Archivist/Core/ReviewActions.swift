@@ -18,13 +18,22 @@ enum ReviewActions {
     }
 
     /// Edit: "the corrected values overwrite the suggested ones on the node,
-    /// then it proceeds through File Action exactly like Accept." A new tag
-    /// introduced here goes through GraphStore's own reuse-over-sprawl tag
-    /// upsert, same as the normal Tagging flow, not a separate ad hoc path.
+    /// then it proceeds through File Action exactly like Accept."
+    ///
+    /// Category is normalized to one of the five fixed values (skills/tagging.md)
+    /// even here, on the human-correction path — not just the AI path. Otherwise a
+    /// reviewer typing something like "Miscellaneous" would leave the database
+    /// saying "Miscellaneous" while TagWriter (which always coerces to one of the
+    /// five, defaulting to Extra) actually wrote "Extra" onto the file — a visible
+    /// mismatch between what the app claims and what Finder shows. Tags mirror the
+    /// normalized category too, same as everywhere else now that category IS the
+    /// tag; whatever the reviewer typed into the separate tags field is no longer
+    /// a distinct value to preserve.
     @discardableResult
     static func edit(node: Node, category: String, docType: String, title: String, tags: [String],
                       store: GraphStore, settings: SettingsStore) -> Node? {
-        store.updateNode(id: node.id, category: category, summary: node.summary, tags: tags,
+        let normalizedCategory = FixedCategory.from(category).rawValue
+        store.updateNode(id: node.id, category: normalizedCategory, summary: node.summary, tags: [normalizedCategory],
                           ownership: node.ownership, docType: docType, title: title)
         guard let updated = store.node(id: node.id) else { return nil }
         return resolve(node: updated, ownership: node.ownership, docType: docType, title: title,

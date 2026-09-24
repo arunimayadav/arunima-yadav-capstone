@@ -31,10 +31,10 @@ final class ProviderRouter {
         cloudProvider() ?? ollama
     }
 
-    func understand(excerpt: String, filename: String, existingTags: [String]) async -> (FileUnderstanding, String) {
+    func understand(excerpt: String, filename: String) async -> (FileUnderstanding, String) {
         let provider = primary()
         do {
-            let result = try await provider.understand(excerpt: excerpt, filename: filename, existingTags: existingTags)
+            let result = try await provider.understand(excerpt: excerpt, filename: filename)
             return (result, provider.kind.rawValue)
         } catch {
             // Logged rather than swallowed: a silent catch here is exactly what made
@@ -51,7 +51,7 @@ final class ProviderRouter {
             if provider.kind == .ollama {
                 print("[Archivist][ProviderRouter] retrying ollama understand() once before giving up")
                 do {
-                    let result = try await ollama.understand(excerpt: excerpt, filename: filename, existingTags: existingTags)
+                    let result = try await ollama.understand(excerpt: excerpt, filename: filename)
                     return (result, provider.kind.rawValue)
                 } catch {
                     print("[Archivist][ProviderRouter] ollama retry also failed: \(error)")
@@ -60,7 +60,7 @@ final class ProviderRouter {
             }
 
             do {
-                let result = try await ollama.understand(excerpt: excerpt, filename: filename, existingTags: existingTags)
+                let result = try await ollama.understand(excerpt: excerpt, filename: filename)
                 return (result, "ollama (fallback)")
             } catch {
                 print("[Archivist][ProviderRouter] ollama fallback understand() also failed: \(error)")
@@ -98,9 +98,13 @@ final class ProviderRouter {
 
     /// A file that couldn't be understood at all (both providers down) lands in the
     /// review queue rather than being silently guessed at — see plan.md section 8.
+    /// Category defaults to Extra, same as any other case the fixed 5-way
+    /// classification can't confidently place — confidence 0 sends it to Review
+    /// regardless, so this is just keeping the stored category one of the five
+    /// valid values rather than a stray "Unsorted".
     private static func fallbackUnderstanding(error: Error) -> FileUnderstanding {
-        FileUnderstanding(ownership: "other", category: "Unsorted", docType: "Other", title: "Untitled",
+        FileUnderstanding(ownership: "other", category: FixedCategory.extra.rawValue, docType: "Other", title: "Untitled",
                            summary: "Could not be analyzed automatically.",
-                           tags: [], confidence: 0, reasoning: "AI call failed: \(error)")
+                           tags: [FixedCategory.extra.rawValue], confidence: 0, reasoning: "AI call failed: \(error)")
     }
 }

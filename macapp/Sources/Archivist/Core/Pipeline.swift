@@ -32,9 +32,9 @@ final class Pipeline {
               "files created before this are pre-existing and will be ignored")
     }
 
-    /// Callers must serialize invocations (see ProcessingQueue) — processing two
-    /// files concurrently would let a later file's `existingTags` snapshot miss an
-    /// earlier file's just-chosen tags, since the AI call alone can take minutes.
+    /// Callers must serialize invocations (see ProcessingQueue) — avoids two
+    /// overlapping AI calls hammering local Ollama at once and racing on the
+    /// content-hash insert for near-simultaneous files.
     @discardableResult
     func process(fileAt url: URL) async -> Node? {
         let name = url.lastPathComponent
@@ -73,26 +73,10 @@ final class Pipeline {
         }
         print("[Archivist][Pipeline] \(name): extracted \(excerpt.count) chars of text")
 
-        let existingTags = Set(store.allNodes().flatMap { $0.tags }).sorted()
-        print("[Archivist][Pipeline] \(name): calling AI provider to classify/summarize/tag…")
-        var (understanding, providerUsed) = await router.understand(
-            excerpt: excerpt, filename: name, existingTags: existingTags
-        )
+        print("[Archivist][Pipeline] \(name): calling AI provider to classify/summarize…")
+        let (understanding, providerUsed) = await router.understand(excerpt: excerpt, filename: name)
         print("[Archivist][Pipeline] \(name): understood via \(providerUsed) -> " +
-              "category=\(understanding.category) confidence=\(understanding.confidence) tags=\(understanding.tags)")
-
-        // skills/tagging.md Step 0, enforced rather than trusted: if this category
-        // already has an established tag from other files, that tag wins over
-        // whatever the model proposed for THIS file — guarantees "same category,
-        // same tag" instead of hoping the model stays consistent call to call
-        // (real usage showed it doesn't, e.g. "Essay" on one file, "Essays" or
-        // "Course Essay" on another file classified into the same category).
-        if let canonicalTag = store.primaryTag(forCategory: understanding.category),
-           !understanding.tags.contains(where: { $0.caseInsensitiveCompare(canonicalTag) == .orderedSame }) {
-            print("[Archivist][Pipeline] \(name): category \"\(understanding.category)\" already has " +
-                  "established tag \"\(canonicalTag)\" — using it instead of \(understanding.tags)")
-            understanding.tags = [canonicalTag] + understanding.tags
-        }
+              "category=\(understanding.category) confidence=\(understanding.confidence)")
 
         let embedding = await router.embed(text: excerpt) ?? []
         print("[Archivist][Pipeline] \(name): embedding vector length = \(embedding.count) " +

@@ -295,35 +295,6 @@ final class GraphStore {
         allNodes().filter { $0.status == .pendingReview }
     }
 
-    /// The tag most already associated with `category` among existing nodes, if
-    /// any — skills/tagging.md Step 0's "same category, same tag" rule enforced
-    /// deterministically rather than left purely to the model's own consistency
-    /// (which real usage showed drifting: the same category ending up with
-    /// different-but-overlapping tags across files, e.g. "Essay" vs "Essays").
-    /// Category matching is case/whitespace-insensitive, same as tag matching in
-    /// `upsertTagLocked`, so minor formatting drift in the category string itself
-    /// doesn't also fracture this grouping. Ties (equally-used tags) break toward
-    /// whichever was established first, so the category's tag doesn't flip-flop.
-    func primaryTag(forCategory category: String) -> String? {
-        queue.sync {
-            var stmt: OpaquePointer?
-            defer { sqlite3_finalize(stmt) }
-            sqlite3_prepare_v2(db, """
-                SELECT t.name
-                FROM tags t
-                JOIN node_tags nt ON nt.tag_id = t.id
-                JOIN nodes n ON n.id = nt.node_id
-                WHERE LOWER(REPLACE(n.category, ' ', '')) = LOWER(REPLACE(?, ' ', ''))
-                GROUP BY t.id
-                ORDER BY COUNT(*) DESC, MIN(t.created_at) ASC
-                LIMIT 1;
-            """, -1, &stmt, nil)
-            sqlite3_bind_text(stmt, 1, category, -1, SQLiteTransient)
-            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
-            return String(cString: sqlite3_column_text(stmt, 0))
-        }
-    }
-
     /// skills/review.md Step 3, Edit: overwrites the suggested category/tags/
     /// ownership/docType/title with the reviewer's corrected values — "the
     /// corrected values overwrite the suggested ones on the node," not appended

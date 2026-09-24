@@ -14,8 +14,8 @@ final class AnthropicProvider: AIProvider {
         self.model = model
     }
 
-    func understand(excerpt: String, filename: String, existingTags: [String]) async throws -> FileUnderstanding {
-        let prompt = PromptBuilder.understandingPrompt(excerpt: excerpt, filename: filename, existingTags: existingTags)
+    func understand(excerpt: String, filename: String) async throws -> FileUnderstanding {
+        let prompt = PromptBuilder.understandingPrompt(excerpt: excerpt, filename: filename)
         let raw = try await message(prompt: prompt)
         return try decodeUnderstanding(raw)
     }

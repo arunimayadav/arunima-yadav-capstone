@@ -3,19 +3,15 @@ import Foundation
 /// Mirrors the graph's own tags onto the file as native macOS Finder tags, so the
 /// organization is visible in Finder/Spotlight outside the app — plan.md section 6/8.
 enum TagWriter {
+    /// `category` is one of the five FixedCategory values — it IS the tag now,
+    /// there's no separate open-ended tag anymore. Every file in a category gets
+    /// that category's one permanent, fixed color (FixedCategory.finderLabelIndex),
+    /// not a computed/hashed one — rule #3 of the fixed-category system: the same
+    /// category always looks the same in Finder, by construction, not by luck.
     @discardableResult
-    static func write(category: String, tags: [String], to url: URL) -> Bool {
-        // Keyed off the primary *tag* (what's actually shown in the UI's pill),
-        // not category — category alone let files that share a category but ended
-        // up with a stale/different tag (before Pipeline's Step-0 enforcement was
-        // added) show mismatched colors. Now that "same category -> same tag" is
-        // guaranteed upstream, keying on the tag directly means "same tag, same
-        // color" holds unconditionally, not just as a side effect of category
-        // hashing to the same bucket. FinderLabelColor is the single shared
-        // computation the UI's pill also uses, so what's written here and what's
-        // displayed there can never drift apart.
-        let colorKey = tags.first ?? category
-        let colorIndex = FinderLabelColor.index(for: colorKey) // 1-7
+    static func write(category: String, to url: URL) -> Bool {
+        let fixedCategory = FixedCategory.from(category)
+        let colorIndex = fixedCategory.finderLabelIndex // 1-7, fixed per category
         // Finder's sidebar entries under Tags ("Red", "Yellow", ...) are saved
         // searches matching files whose tag NAME is exactly one of these strings —
         // clicking "Yellow" does not look at the separate labelNumber attribute at
@@ -23,13 +19,10 @@ enum TagWriter {
         // just implied by a color-only attribute.
         let colorName = FinderLabelColor.names[colorIndex - 1]
 
-        // De-duplicated: the AI's own "tags" list can legitimately repeat the
-        // category (e.g. category="Finance" and tags=["Finance", "Bank Statement"]),
-        // and Finder shouldn't show the same tag label twice. The color name is
-        // added as a genuine tag (see labelColorNames above) alongside the
-        // descriptive ones, specifically so Finder's sidebar color filters work.
+        // The category name itself (e.g. "Finance") plus the color name (e.g.
+        // "Green") — deduplicated in case they ever coincide.
         var seen = Set<String>()
-        let finderTags = ([category] + tags + [colorName]).filter { seen.insert($0).inserted }
+        let finderTags = [fixedCategory.rawValue, colorName].filter { seen.insert($0).inserted }
         var success = true
         do {
             // Untyped NSURL API instead of URLResourceValues.tagNames — this SDK marks
